@@ -1,2 +1,2 @@
 # regex
-Regex to parse translator
+Regex to parse translator for Red

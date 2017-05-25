@@ -360,14 +360,15 @@ re-ctx: make reactor! [
 	set 'regex func [
 		"Regex to parse converter"
 		re [string!]  
-		/parse str [string!] 								"string to parse"
-		/icase 										"turns on case-insensitivity"
-		/debug										"turns on debugging"
-		/spec 										"prints out generated spec"
-		/multiline 									"lets ^^ and $ match beginning and end of line also"
-		/singleline 									"lets dot match linebreaks also"
-		/try "try specific flavor of regexp" flavor [lit-word!] "flavor to try"
-		/freespace
+		/parse str [string!] 						"string to parse"
+		/debug								"turns on debugging"
+		/spec 								"prints out generated spec"
+		/modes "passes all the modes in one string"  optstr [string!] 	"shortcoded modes"
+		/icase		"see next"	/i				"turns on case-insensitivity"
+		/multiline	"see next"	/m				"lets ^^ and $ match beginning and end of line also"
+		/singleline	"see next"	/s				"lets dot match linebreaks also"
+		/freespace	"see next"	/x				"lets you use whitespace, to make re more readable"
+		/try	"try specific flavor of regexp"	flavor	[lit-word!] 	"flavor to try"
 		/local inner
 	][  
 		debugging: 	any [debug off]
@@ -376,8 +377,10 @@ re-ctx: make reactor! [
 		br-num:		0
 		_spec:		clear []
 		inner: 		clear ""
-		self/ml: 	any [multiline off]
-		self/sl: 	any [singleline off]
+		nocase:		any [icase 	i all [modes find optstr "i"] off]
+		self/ml: 	any [multiline  m all [modes find optstr "m"] off]
+		self/sl: 	any [singleline s all [modes find optstr "s"] off]
+		freesp: 	any [freespace 	x all [modes find optstr "x"] off]
 		empty-cs?: 	false
 		cs-open?: 	false
 		levelgrp: 	clear []
@@ -386,7 +389,6 @@ re-ctx: make reactor! [
 		levelnam: 	clear []
 		capturing: 	off
 		defs: 		copy []
-		freesp: 	any [freespace off]
 
 		if try [unless do select flavors flavor [print append to-string flavor " is not supported :("]]
 		
@@ -410,7 +412,7 @@ re-ctx: make reactor! [
 												; rebinding removes some strange references
 		if spec [print mold _spec]
 		either parse [
-			return either icase [system/words/parse str _spec][system/words/parse/case str _spec]
+			return either nocase [system/words/parse str _spec][system/words/parse/case str _spec]
 		][
 			return _spec
 		]

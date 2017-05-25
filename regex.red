@@ -56,6 +56,7 @@ Red [
 				2017-05-25 -- added short refinements `/i`, `/s`, `/m` and `/x`, with same meaning as 
 					`/icase`, `/singleline`, `/multiline` and `/freespace` correspondingly.
 					Also added `/modes options` refinement, where shortcoded switches can be set in one string.
+					Made freespace more permissive and made an enhanced example for it.
 					
 			}
 	TBD: 		{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc
@@ -92,10 +93,10 @@ re-ctx: make reactor! [
 		c: copy [] rpt: none								; c -- whole charset expression; rpt -- quantifier
 		cs-open?: true
 		if negated: to-logic find/match s #"^^"	[s: next s]				; if charset is negated, jump over ^
-		s1: index? s														; register position after possible ^
+		s1: index? s									; register position after possible ^
 		system/words/parse s [								; let's form the charset
 			collect set cb some [							; collect charset definitional elements
-				 #"]" s2: [													; register current position after ]
+				 #"]" s2: [							; register current position after ]
 					if (s1 < ((index? s2) - 1))	[			; if ] is not in the beginning of charclass
 						any #"]" opt [collect set rpt repeater]		; we are in the end of charset, check for quantifiers, register, exit
 						(cs-open?: false) e: break			; register closing of charset definition
@@ -104,35 +105,35 @@ re-ctx: make reactor! [
 						| (cs-open?: false) e: break			; otherwise, register closing, position and exit
 					]
 				]  											
-				| "-]" keep (#"-") 											; if - occurs before closing ]
+				| "-]" keep (#"-") 						; if - occurs before closing ]
 					   any #"]" opt [collect set rpt repeater] 		; collect quantifier, if any
 					   (cs-open?: false) e: break				; declare charclass closed, register position, go back
-				| "^^" keep (#"^^")											; we can keep ^, because its negation meaning is taken care of
+				| "^^" keep (#"^^")						; we can keep ^, because its negation meaning is taken care of
 				| ["\n" keep (#"^/") | "\r" keep (#"^M")]			; keep linebreakers
 				| #"\" [
 					ahead 	[clmetaset | metaset] 				; metachars may be escaped 
 					keep 	[clmetaset | metaset] 							
-					| (cause-error 'user 'message ["Unescaped \!"])		; only one, which sould necessarily be escaped
+					| (cause-error 'user 'message ["Unescaped \! in char-class"])	; only one, which sould necessarily be escaped
 				]					
 				| #"-" s2: [if (s1 = ((index? s2) - 1)) keep (#"-")		; we have just a dash
-					| keep ('-) ]											; we have a range
-				| keep clliteral ;(print "ha")					; keep more or less anything
+					| keep ('-) ]						; we have a range
+				| keep clliteral 						; keep more or less anything
 				| (cause-error 'user 'message ["Malformed charset?"])		; just for checking
 			]
 		]
-		cs: next-cs															; new word to bind charset to
+		cs: next-cs									; new word to bind charset to
 		if (cs-open? and empty? e) [
 			cause-error 'user 'message ["Character class unclosed!"]
 		]
 		if to-logic negated [cb: compose/deep [not [(cb)]]]				; if charset is negated, make negation
 		append defs copy compose/deep [ 
 			(to-set-word cs) charset [(cb)]
-		] 																	; escape parse to actually make a charset
+		] 										; escape parse to actually make a charset
 		if rpt [append c either block? rpt/1 [rpt/1][rpt]]				; did we have quantifiers? Append them here
-		append c cs 														; and finally a word referring to created charset
+		append c cs 									; and finally a word referring to created charset
 		compose/deep [[(c)] (e)]							; send proudly back charset def and remaining string after charset
 	]
-	frsp: 	[if (freesp) [some wspace] | ]
+	frsp: 	[opt free]
 	group: 	[if (not cs-open?) [
 		#"(" frsp
 		[	"?P<" 	copy gname to #">" 
@@ -193,7 +194,7 @@ re-ctx: make reactor! [
 			(if debugging [probe compose ["lgrp:" (levelgrp)]])
 			out: clear []
 		)
-	| 	#")" opt free opt collect set rpt repeater 
+	| 	#")" frsp opt collect set rpt repeater 
 		(
 			either capturing [
 				if nam: take levelnam [nam: to-word copy nam]
@@ -213,10 +214,10 @@ re-ctx: make reactor! [
 	| 	keep literal
 	]]
 	class: [
-		"[:" copy cl to ":]" 2 skip keep (to-word cl)										; this is on wrong place?
+		"[:" copy cl to ":]" 2 skip keep (to-word cl)					; this is in wrong place?
 	| 	#"[" s: 
 		(
-			set [c e] make-charset s 														; send string to the charset-factory
+			set [c e] make-charset s 						; send string to the charset-factory
 			append out c								; put the charset into place
 			e: any [find/last s e tail s]
 		)
@@ -293,9 +294,9 @@ re-ctx: make reactor! [
 		  #"\" 		(cause-error 'user 'message ["Unescaped \!"])
 		| #")" 		(print "Warning! Invalid use of closing parentheses.")
 	]
-	free: [if (freesp) [
+	free: [if (freesp) [some [
 			any wspace #"#" thru linebreak				; comments
-		|	#"(" any wspace s: [
+		|	#"(" frsp s: [
 				#"?" some wspace [#":" | #">" | #"<" | #"'" | #"&" | #"P"] 
 			| 	"?P" some wspace [#"<" | #">" | #"="]
 			] 
@@ -304,7 +305,7 @@ re-ctx: make reactor! [
 			])
 		| 	"\ " keep (#" ")
 		|	if (not cs-open?) [some wspace]
-	]]
+	]]]
 	
 	sequence: [
 		escaped
@@ -355,7 +356,7 @@ re-ctx: make reactor! [
 			loose 			[[to end]]
 		]
 	]
-	flavors: [JS [empty-cs?: true]]								; just a probe so far
+	flavors: [JS [empty-cs?: true]]						; just a probe so far
 	rm-wspace: [(print "hi")
 		any [remove wspace]
 	]
@@ -402,17 +403,16 @@ re-ctx: make reactor! [
 			]]
 			copy inner [
 				  to [#"\" copy s skip 
-					if (find [39 90] to-integer to-char s) [opt free end] 	;#"Z" #"'"
-					| if (not ml) [#"$" opt free end]]			(ending: 'strict) 
+					if (find [39 90] to-integer to-char s) [frsp end] 	;#"Z" #"'"
+					| if (not ml) [#"$" frsp end]]				(ending: 'strict) 
 				| to [#"\" copy s skip 
-					if (122 = to-integer to-char s) [opt free end]]		(ending: 'strictissima) ;#"z"
-				| to [opt free end]						(ending: 'loose)
+					if (122 = to-integer to-char s) [frsp end]]		(ending: 'strictissima) ;#"z"
+				| to [frsp end]							(ending: 'loose)
 			] 
 			(finish copy inner)
 		]
 		_spec: either empty? defs [_spec][head insert/only _spec to-paren defs]
-		bind _spec: load mold _spec re-ctx						; hack to get nesting groups to work 
-												; rebinding removes some strange references
+		bind _spec: load mold _spec re-ctx						; rebinding removes some strange references
 		if spec [print mold _spec]
 		either parse [
 			return either nocase [system/words/parse str _spec][system/words/parse/case str _spec]
@@ -469,24 +469,33 @@ examples [
 	regex/spec "abc(?# Simple re )"
 	=> [thru [#"a" #"b" #"c"] to end]
 	
-	; freespace demonstration
+	; freespace demonstration + named group + wordboundary + backreference
+	; without wordboundary invalid IP addresses like eg 192.186.1.265 will be 
+	; reckognized as 192.186.1.26
 	ip-v4: {
-	\A						# Check start of the string
-	(						# Begin definition of quad number
-			25[0-5]					# Highest quads			250-255
-		|	2[0-4]\d				# Second highest quads 		200-249
-		|	1\d\d					# Quads in second hundred 	100-199
-		|	[1-9]\d					# Quads				10-99
-		|	\d					# Quads				0-9
-	)						# End definition of quad number,
-							# and  first number is checked
-	(?: 						# Begin non-capturing group 
-			\.					# check for dot
-			(? 1 ) 					# and call quad definition subroutine
-	)    						# End group
-	{ 3 }						# Iterate last group 3 times  
-	\z						# Check end of the string
+	(   						# We are capturing the whole address
+		?P< ipaddr >				# Let's give it a name
+		(					# Begin definition of quad number
+			\b (?:					# Quad starts (wordboundary + noncapturing group)
+					25[0-5]				# Highest quads			250-255
+				|	2[0-4]\d			# Second highest quads 		200-249
+				|	1\d\d				# Quads in second hundred 	100-199
+				|	[1-9]\d				# Quads 			 10-99
+				|	\d				# Quads 			  0-9
+			) \b					# Quad ends (nc-group ends + wordboundary)
+		)					# End definition of quad number,
+							# and check first quad
+		(?: 					# Begin non-capturing group
+			\.					# checks for dot
+			(? 2 ) 					# and calls quad definition subroutine
+		)    					# End group
+		{ 3 }					# Iterate last group 3 times 
+	)
 }
-	regex/spec/parse/freespace ip-v4 "192.168.1.65"
-
+	>> regex/spec/parse/freespace ip-v4 "some text 192.168.1.65 around the address"
+	== true
+	>> ipaddr
+	== "192.168.1.65"
+	>> regex/spec/parse/freespace ip-v4 "some text 192.168.1.265 around the address"
+	== false
 ]

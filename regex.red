@@ -467,17 +467,17 @@ examples [
 	; freespace demonstration
 	ip-v4: {
 	\A						# Check start of the string
-	(						# Begin definition of bit number
-			25[0-5]					# Highest bits			250-255
-		|	2[0-4]\d				# Second highest bits 		200-249
-		|	1\d\d					# Bits in second hundred 	100-199
-		|	[1-9]\d					# Bits 				10-99
-		|	\d					# Bits 				0-9
-	)						# End definition of bit number,
+	(						# Begin definition of quad number
+			25[0-5]					# Highest quads			250-255
+		|	2[0-4]\d				# Second highest quads 		200-249
+		|	1\d\d					# Quads in second hundred 	100-199
+		|	[1-9]\d					# Quads				10-99
+		|	\d					# Quads				0-9
+	)						# End definition of quad number,
 							# and  first number is checked
 	(?: 						# Begin non-capturing group 
 			\.					# check for dot
-			(? 1 ) 					# and call bit definition subroutine
+			(? 1 ) 					# and call quad definition subroutine
 	)    						# End group
 	{ 3 }						# Iterate last group 3 times  
 	\z						# Check end of the string

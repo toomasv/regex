@@ -53,6 +53,9 @@ Red [
 					changed `/case` refinement into `/icase` to turn it case-insensitive
 					added inline comments syntax - (?# Comment )
 				2017-05-24 -- added `/freespace` refinement - see corresponding example
+				2017-05-25 -- added short refinements `/i`, `/s`, `/m` and `/x`, with same meaning as 
+					`/icase`, `/singleline`, `/multiline` and `/freespace` correspondingly.
+					Also added `/modes options` refinement, where shortcoded switches can be set in one string.
 					
 			}
 	TBD: 		{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc

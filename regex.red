@@ -57,7 +57,7 @@ Red [
 					`/icase`, `/singleline`, `/multiline` and `/freespace` correspondingly.
 					Also added `/modes options` refinement, where shortcoded switches can be set in one string.
 					Made freespace more permissive and made an enhanced example for it.
-					
+				2017-05-27 -- normalized freespace handling	
 			}
 	TBD: 		{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc
 				inline created words are leaking into global environment}
@@ -80,62 +80,62 @@ re-ctx: make reactor! [
 	defs: copy []
 	freespace: off
 	br-num: 0
-	next-br: does [compose 									; backreference-identifier generator
+	next-br: does [compose 														; backreference-identifier generator
 		[(to-word append copy "_" br-num: br-num + 1) 
 		 (to-word append copy "br_" br-num)]
 	] 								
+	
 	cs-num: 0 
 	empty-cs?: false
 	cs-open?: false
-	next-cs: does [to-word append copy "cs_" cs-num: cs-num + 1] 				; charset-number-word generator
+	next-cs: does [to-word append copy "cs_" cs-num: cs-num + 1] 									; charset-number-word generator
 		
-	make-charset: func [s /local c e s1 s2 negated cs rpt g cb][				; cb -- charset definition; e -- continuation string
-		c: copy [] rpt: none								; c -- whole charset expression; rpt -- quantifier
+	make-charset: func [s /local c e s1 s2 negated cs rpt g][									; cb -- charset definition; e -- continuation string
+		c: copy [] rpt: none													; c -- whole charset expression; rpt -- quantifier
 		cs-open?: true
-		if negated: to-logic find/match s #"^^"	[s: next s]				; if charset is negated, jump over ^
-		s1: index? s									; register position after possible ^
-		system/words/parse s [								; let's form the charset
-			collect set cb some [							; collect charset definitional elements
-				 #"]" s2: [							; register current position after ]
-					if (s1 < ((index? s2) - 1))	[			; if ] is not in the beginning of charclass
-						any #"]" opt [collect set rpt repeater]		; we are in the end of charset, check for quantifiers, register, exit
-						(cs-open?: false) e: break			; register closing of charset definition
+		if negated: to-logic find/match s #"^^"	[s: next s]									; if charset is negated, jump over ^
+		s1: index? s														; register position after possible ^
+		system/words/parse s [													; let's form the charset
+			collect set cb some [												; collect charset definitional elements
+				 #"]" s2: [												; register current position after ]
+					if (s1 < ((index? s2) - 1))	[								; if ] is not in the beginning of charclass
+						any #"]" opt [collect set rpt repeater]							; we are in the end of charset, check for quantifiers, register, exit
+						(cs-open?: false) e: break								; register closing of charset definition
 					] | [ 
-						if (not empty-cs?) [keep (#"]")] 		; if empty charsets are not allowed, then keep ] as part of charset definition
-						| (cs-open?: false) e: break			; otherwise, register closing, position and exit
+						if (not empty-cs?) [keep (#"]")] 							; if empty charsets are not allowed, then keep ] as part of charset definition
+						| (cs-open?: false) e: break								; otherwise, register closing, position and exit
 					]
 				]  											
-				| "-]" keep (#"-") 						; if - occurs before closing ]
-					   any #"]" opt [collect set rpt repeater] 		; collect quantifier, if any
-					   (cs-open?: false) e: break				; declare charclass closed, register position, go back
-				| "^^" keep (#"^^")						; we can keep ^, because its negation meaning is taken care of
-				| ["\n" keep (#"^/") | "\r" keep (#"^M")]			; keep linebreakers
+				| "-]" keep (#"-") 											; if - occurs before closing ]
+					   any #"]" opt [collect set rpt repeater] 							; collect quantifier, if any
+					   (cs-open?: false) e: break									; declare charclass closed, register position, go back
+				| "^^" keep (#"^^")											; we can keep ^, because its negation meaning is taken care of
+				| ["\n" keep (#"^/") | "\r" keep (#"^M")]								; keep linebreakers
 				| #"\" [
-					ahead 	[clmetaset | metaset] 				; metachars may be escaped 
+					ahead 	[clmetaset | metaset] 									; metachars may be escaped 
 					keep 	[clmetaset | metaset] 							
-					| (cause-error 'user 'message ["Unescaped \! in char-class"])	; only one, which sould necessarily be escaped
+					| (cause-error 'user 'message ["Unescaped \ in char-class!"])					; only one, which sould necessarily be escaped
 				]					
-				| #"-" s2: [if (s1 = ((index? s2) - 1)) keep (#"-")		; we have just a dash
-					| keep ('-) ]						; we have a range
-				| keep clliteral 						; keep more or less anything
-				| (cause-error 'user 'message ["Malformed charset?"])		; just for checking
+				| #"-" s2: [if (s1 = ((index? s2) - 1)) keep (#"-")							; we have just a dash
+					| keep ('-) ]											; we have a range
+				| keep clliteral ;(print "ha")										; keep more or less anything
+				| (cause-error 'user 'message ["Malformed charset?"])							; just for checking
 			]
 		]
-		cs: next-cs									; new word to bind charset to
+		cs: next-cs														; new word to bind charset to
 		if (cs-open? and empty? e) [
 			cause-error 'user 'message ["Character class unclosed!"]
 		]
-		if to-logic negated [cb: compose/deep [not [(cb)]]]				; if charset is negated, make negation
+		if to-logic negated [cb: compose/deep [not [(cb)]]]									; if charset is negated, make negation
 		append defs copy compose/deep [ 
 			(to-set-word cs) charset [(cb)]
-		] 										; escape parse to actually make a charset
-		if rpt [append c either block? rpt/1 [rpt/1][rpt]]				; did we have quantifiers? Append them here
-		append c cs 									; and finally a word referring to created charset
-		compose/deep [[(c)] (e)]							; send proudly back charset def and remaining string after charset
+		] 															; escape parse to actually make a charset
+		if rpt [append c either block? rpt/1 [rpt/1][rpt]]									; did we have quantifiers? Append them here
+		append c cs 														; and finally a word referring to created charset
+		compose/deep [[(c)] (e)]												; send proudly back charset def and remaining string after charset
 	]
-	frsp: 	[opt free]
 	group: 	[if (not cs-open?) [
-		#"(" frsp
+		#"(" 
 		[	"?P<" 	copy gname to #">" 
 		| 	"?'" 	copy gname to #"'" 
 		| 	"?<" 	copy gname to #">"
@@ -149,37 +149,37 @@ re-ctx: make reactor! [
 			(if debugging [probe compose ["lgrp:" (levelgrp)]])
 			out: clear []
 		)
-	|	[ #"(" frsp #"?" frsp #"+" 	copy n number frsp #")"
-		| "\g" frsp 
-			[	#"<" frsp #"+" 	copy n number frsp #">"
-			| 	#"'" frsp #"+" 	copy n number frsp #"'"]
+	|	[ #"("  #"?"  #"+" 	copy n number  #")"
+		| "\g"  
+			[	#"<"  #"+" 	copy n number  #">"
+			| 	#"'"  #"+" 	copy n number  #"'"]
 		] keep (to-word append copy "_" br-num + to-integer n)
-	|	[ #"(" frsp #"?" frsp #"-" 	copy n number frsp #")"
-		| "\g" frsp 
-			[	#"<" frsp #"-" 	copy n number frsp #">"
-			| 	#"'" frsp #"-" 	copy n number frsp #"'"]
+	|	[ #"("  #"?"  #"-" 	copy n number  #")"
+		| "\g"  
+			[	#"<"  #"-" 	copy n number  #">"
+			| 	#"'"  #"-" 	copy n number  #"'"]
 		] keep (to-word append copy "_" br-num + 1 - to-integer n)
-	|	[ #"(" frsp "?" 	frsp copy n number frsp #")" 
-		| "\g" frsp 
-			[	"<" 	frsp copy n number frsp #">"
-			| 	"'" 	frsp copy n number frsp #"'"]
+	|	[ #"("  "?" 	 copy n number  #")" 
+		| "\g"  
+			[	"<" 	 copy n number  #">"
+			| 	"'" 	 copy n number  #"'"]
 		] keep (to-word append copy "_" n)
-	|	[ #"(" frsp 
+	|	[ #"("  
 			[	"?&" 	copy gname to #")" 
 			| 	"?P>" 	copy gname to  #")"]
-		| "\g" frsp 
+		| "\g"  
 			[	"<" 	copy gname to  #">"
 			| 	"'" 	copy gname to  #"'"]
 		] skip 
 		keep (to-word append copy "_" gname)
-	|	[ #"(" frsp "?P=" 	copy gname to #")" 
-		| "\k" frsp 
+	|	[ #"("  "?P=" 	copy gname to #")" 
+		| "\k"  
 			[	"'" 	copy gname to #"'" 
 			| 	"<" 	copy gname to #">" 
 			| 	"{" 	copy gname to #"}"]
 		] skip 
 		keep (to-word gname)
-	|	#"(" frsp "?:" (
+	|	#"("  "?:" (
 			insert levelcap capturing 
 			capturing: off
 			insert/only levelgrp copy out 
@@ -191,15 +191,15 @@ re-ctx: make reactor! [
 			insert levelnam none
 			insert/only levelsym next-br
 			insert/only levelgrp copy out 
-			(if debugging [probe compose ["lgrp:" (levelgrp)]])
+			if debugging [probe compose ["lgrp:" (levelgrp)]]
 			out: clear []
 		)
-	| 	#")" frsp opt collect set rpt repeater 
+	| 	#")"  opt collect set rpt repeater 
 		(
 			either capturing [
 				if nam: take levelnam [nam: to-word copy nam]
-				sym: take levelsym 
 				if nam [append defs to-set-word copy append copy "_" to-lit-word nam]
+				sym: take levelsym 
 				append/only append defs to-set-word sym/1 copy out 
 				if debugging [probe compose ["defs:" (defs)]]
 				if block? first rpt [rpt: first rpt]
@@ -214,14 +214,14 @@ re-ctx: make reactor! [
 	| 	keep literal
 	]]
 	class: [
-		"[:" copy cl to ":]" 2 skip keep (to-word cl)					; this is in wrong place?
+		"[:" copy cl to ":]" 2 skip keep (to-word cl)										; this is in wrong place?
 	| 	#"[" s: 
 		(
-			set [c e] make-charset s 						; send string to the charset-factory
-			append out c								; put the charset into place
+			set [c e] make-charset s 											; send string to the charset-factory
+			append out c													; put the charset into place
 			e: any [find/last s e tail s]
 		)
-		:e										; continue after the charclass
+		:e															; continue after the charclass
 	]
 	special: [
 		  "\d" 		keep ('digit)
@@ -242,7 +242,7 @@ re-ctx: make reactor! [
 	]
 	linestart: 		is [either ml [[#"^^" keep (#"^/")]][[#"^^" (starting: 'strict)]]]
 	lineend:		is [either ml [[#"$" keep ([ahead [opt #"^/" end | #"^/"]])]][[#"$" keep ([opt #"^/" end])]]] 
-	wordboundary:	["\b" keep (										; does not react on changing word / nonword values
+	wordboundary:	["\b" keep (												; does not react on changing word / nonword values
 		[s: [
 			if ((1 = index? s) or find nonword first back s) 	[ahead word] 
 			| if (find word first back s) 				[ahead [nonword | end]]
@@ -292,50 +292,46 @@ re-ctx: make reactor! [
 	char: 			[keep literal]
 	exception: 		[
 		  #"\" 		(cause-error 'user 'message ["Unescaped \!"])
-		| #")" 		(print "Warning! Invalid use of closing parentheses.")
+		| #")" 		(cause-error 'user 'message ["Invalid use of closing parentheses!"])
 	]
-	free: [if (freesp) [some [
-			any wspace #"#" thru linebreak				; comments
-		|	#"(" frsp s: [
-				#"?" some wspace [#":" | #">" | #"<" | #"'" | #"&" | #"P"] 
-			| 	"?P" some wspace [#"<" | #">" | #"="]
-			] 
-			(cause-error 'user 'message to-block mold rejoin [
-				"Illegal free space in group reference: " mold copy/part s 10
-			])
-		| 	"\ " keep (#" ")
-		|	if (not cs-open?) [some wspace]
-	]]]
-	
-	sequence: [
-		escaped
-		| free
-		| anchor
-		| altern
-		| comm
-		| group
-		| class
-		| special
-		| backref
-		| #"." 		keep ('anychar)
-		| char 
-		| exception
-	]
-	repeater: [frsp [
-		  #"^{" frsp copy n1 number frsp #"," frsp copy n2 number frsp #"^}" 
-									keep (reduce [to-integer n1 to-integer n2])
-		| #"^{" frsp #"," frsp copy n2 number frsp #"^}" 	keep (reduce [0  to-integer n2])
-		| #"^{" frsp copy n1 number frsp #"," frsp "^}"		keep (reduce [to-integer n1 10000])
-		| #"^{" frsp copy n1 number frsp #"^}"			keep (to-integer n1)
-		| #"?" 							keep ('opt)
-		| #"+" 							keep ('some)
-		| #"*" 							keep ('any) 
+	rmfree: [any [
+			remove [any wspace #"#" thru linebreak]							; comments
+		| 	change "\ " " "
+		|	"\[" | "\]"
+		|	#"[" (cs-open?: yes)
+		|	#"]" (cs-open?: no)
+		|	if (not cs-open?) remove some wspace
+		| 	skip
 	]]
-	build: func [inner /local s e c t r n mp][				; main workhorse
+	sequence: [
+			escaped
+		| 	anchor
+		| 	altern
+		| 	comm
+		| 	group
+		| 	class
+		| 	special
+		| 	backref
+		| 	#"." 		keep ('anychar)
+		| 	char 
+		| 	exception
+	]
+	repeater: [
+		  #"^{"  copy n1 number  #","  copy n2 number  #"^}" 
+								keep (reduce [to-integer n1 to-integer n2])
+		| #"^{"  #","  copy n2 number  #"^}" 		keep (reduce [0  to-integer n2])
+		| #"^{"  copy n1 number  #","  "^}"		keep (reduce [to-integer n1 10000])
+		| #"^{"  copy n1 number  #"^}"			keep (to-integer n1)
+		| #"?" 						keep ('opt)
+		| #"+" 						keep ('some)
+		| #"*" 						keep ('any) 
+	]
+
+	build: func [inner /local s e c t r n mp][							; main workhorse
 		out: clear []
 		system/words/parse/case inner [
 			any [
-				collect set seq sequence 
+				collect set seq sequence
 				opt collect set rpt repeater
 				(if block? first rpt [rpt: first rpt] 
 				append out compose [(rpt) (seq)]) 
@@ -354,25 +350,25 @@ re-ctx: make reactor! [
 			strict 			[[opt #"^/" end]] 
 			strictissima 	['end]
 			loose 			[[to end]]
+			;noend	[[]]
 		]
+		;if starting [append _spec switch starting [strict [middle] loose [compose/deep [thru [(middle)]]]]]
+		;if false 	[append _spec switch ending [strict ['end] loose [[to end]]]]
 	]
-	flavors: [JS [empty-cs?: true]]						; just a probe so far
-	rm-wspace: [(print "hi")
-		any [remove wspace]
-	]
+	flavors: [JS [empty-cs?: true]]								; just a probe so far
 	
 	set 'regex func [
 		"Regex to parse converter"
 		re [string!]  
-		/parse str [string!] 						"string to parse"
-		/debug								"turns on debugging"
-		/spec 								"prints out generated spec"
-		/modes "passes all the modes in one string"  optstr [string!] 	"shortcoded modes"
-		/icase		"see next"	/i				"turns on case-insensitivity"
-		/multiline	"see next"	/m				"lets ^^ and $ match beginning and end of line also"
-		/singleline	"see next"	/s				"lets dot match linebreaks also"
-		/freespace	"see next"	/x				"lets you use whitespace, to make re more readable"
-		/try	"try specific flavor of regexp"	flavor	[lit-word!] 	"flavor to try"
+		/parse str [string!] 								"string to parse"
+		/debug										"turns on debugging"
+		/spec 										"prints out generated spec"
+		/modes "passes all the modes in one string"  optstr [string!] 			"shortcoded modes"
+		/icase		"see next"	/i						"turns on case-insensitivity"
+		/multiline	"see next"	/m						"lets ^^ and $ match beginning and end of line also"
+		/singleline	"see next"	/s						"lets dot match linebreaks also"
+		/freespace	"see next"	/x						"lets you use whitespace, to make re more readable"
+		/try	"try specific flavor of regexp"	flavor	[lit-word!] 			"flavor to try"
 		/local inner
 	][  
 		debugging: 	any [debug off]
@@ -393,26 +389,32 @@ re-ctx: make reactor! [
 		levelnam: 	clear []
 		capturing: 	off
 		defs: 		copy []
-
+		
+		if freesp [system/words/parse re rmfree cs-open?: no probe re]
+		
 		if try [unless do select flavors flavor [print append to-string flavor " is not supported :("]]
 		
 		system/words/parse re [
-			[frsp [
-				  ["\A" | "\`" | if (not ml) ["^^"]]				(starting: 'strict)
-				| 								(starting: 'loose)
-			]]
+			[
+				  ["\A" | "\`" | if (not ml) ["^^"]]						(starting: 'strict)
+				| 										(starting: 'loose)
+			]
 			copy inner [
-				  to [#"\" copy s skip 
-					if (find [39 90] to-integer to-char s) [frsp end] 	;#"Z" #"'"
-					| if (not ml) [#"$" frsp end]]				(ending: 'strict) 
-				| to [#"\" copy s skip 
-					if (122 = to-integer to-char s) [frsp end]]		(ending: 'strictissima) ;#"z"
-				| to [frsp end]							(ending: 'loose)
+				to [
+					#"\" copy s skip 
+					if (find [39 90] to-integer to-char s) end 				;#"Z" #"'"
+				| 	if (not ml) #"$" end
+				]										(ending: 'strict) 
+			| 	to [
+					#"\" copy s skip 
+					if (122 = to-integer to-char s) end
+				]										(ending: 'strictissima) ;#"z" 
+			| 	to end										(ending: 'loose)
 			] 
 			(finish copy inner)
 		]
 		_spec: either empty? defs [_spec][head insert/only _spec to-paren defs]
-		bind _spec: load mold _spec re-ctx						; rebinding removes some strange references
+		bind _spec: load mold _spec re-ctx								; rebinding corrects some strange behavior
 		if spec [print mold _spec]
 		either parse [
 			return either nocase [system/words/parse str _spec][system/words/parse/case str _spec]
@@ -475,7 +477,7 @@ examples [
 	ip-v4: {
 	(   						# We are capturing the whole address
 		?P< ipaddr >				# Let's give it a name
-		(					# Begin definition of quad number
+		(						# Begin definition of quad number
 			\b (?:					# Quad starts (wordboundary + noncapturing group)
 					25[0-5]				# Highest quads			250-255
 				|	2[0-4]\d			# Second highest quads 		200-249
@@ -483,19 +485,19 @@ examples [
 				|	[1-9]\d				# Quads 			 10-99
 				|	\d				# Quads 			  0-9
 			) \b					# Quad ends (nc-group ends + wordboundary)
-		)					# End definition of quad number,
-							# and check first quad
+		)						# End definition of quad number,
+								# and check first quad
 		(?: 					# Begin non-capturing group
-			\.					# checks for dot
-			(? 2 ) 					# and calls quad definition subroutine
+			\.					# check for dot
+			(? 2 ) 					# and call quad definition subroutine
 		)    					# End group
 		{ 3 }					# Iterate last group 3 times 
 	)
 }
-	>> regex/spec/parse/freespace ip-v4 "some text 192.168.1.65 around the address"
+	>> regex/parse/freespace ip-v4 "some text 192.168.1.65 around the address"
 	== true
 	>> ipaddr
 	== "192.168.1.65"
-	>> regex/spec/parse/freespace ip-v4 "some text 192.168.1.265 around the address"
+	>> regex/parse/freespace ip-v4 "some text 192.168.1.265 around the address"
 	== false
 ]

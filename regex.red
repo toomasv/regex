@@ -1,7 +1,7 @@
 Red [
 	Author: 	"Toomas Vooglaid"
 	file: 		"%regex.red"
-	Purpose: 	{Simple regex to parse converter}
+	Purpose: 	{Regex to parse converter}
 	History:	{Started: 2017-05-09
 				v.0.1: 2017-05-12 -- first working version with: 
 					start `^^` and end `$` anchors, 

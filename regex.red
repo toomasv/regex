@@ -59,100 +59,114 @@ Red [
 					Made freespace more permissive and made an enhanced example for it.
 				v.0.6:	2017-05-27 -- 
 					normalized freespace handling
-					added capturing of overall match into `br_0`
+					added capturing of overall match into `br_0` (changed later into `&0`)
 					added global mode refinements `/global` and `/g`
 					and a map `br_`, which holds captured strings on numbered or named keys:
 						if in global mode -- in blocks, otherwise in strings (see examples)
 				2017-05-28 -- added refinements `/simplex` with short alias `/n` to turn on non-capturing mode, 
 					where only named groups are captured (and numbered)
+				2017-05-29 -- changed `br_` into tcl-like `&` and made it changeable. It can be changed
+					as eg. `re-ctx/symbol: '¤`. See examples. Earlier examples presume symbol `br_`.
+				v.0.7:	2017-05-30 --
+					added first bit of `/replace replacement` refinement. `replacement` is string (so far), 
+					which may include backreferences to captured strings in the same form as in matching, 
+					or as `\'1'` or `\'name'`. `name` may be assigned a value in matching, but also outside 
+					of the `regex`. The overall match is replaced by evaluated replacement. 
+					Also in `global` mode. Examples.
 			}
-	TBD: 		{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc
+	TBD: 	{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc
 				inline created words are leaking into global environment}
 ]
 
 re-ctx: make reactor! [
-	_spec: 		clear []
-	starting: 	'loose
-	ending: 	'loose
-	nest-level: 0
-	sl: ml: 	off
-	nocase: 	off
-	freespace: 	off
-	glob: 		off
-	simp:		off
-	debugging: 	off
-	longout: 	clear []
-	shortout:	clear []
-	rpt: seq: 	clear []
-	levelgrp: 	clear []
-	levelgr2:	clear []
-	levelcap: 	clear []
-	levelsym: 	clear []
-	levelnam: 	clear []
-	capturing: 	off
-	to-short: 	off
-	set 'br_	make map! 5
-	defs: 		clear []
-	sym:		none
-	sbrdef1:	none
-	sbrdef2:	none
-	bckref: 	none
-	assignments: clear []
-	br-num: 	0
+	_spec: 			clear []
+	starting: 		'loose
+	ending: 		'loose
+	nest-level:		0
+	sl: ml: 		off
+	nocase: 		off
+	freespace: 		off
+	glob: 			off
+	simp:			off
+	debugging: 		off
+	longout: 		clear []
+	shortout:		clear []
+	rpt: seq: 		clear []
+	levelgrp: 		clear []
+	levelgr2:		clear []
+	levelcap: 		clear []
+	levelsym: 		clear []
+	levelnam: 		clear []
+	capturing: 		off
+	to-short: 		off
+	symbol:			'&
+	brsymb:			is [to-string symbol]
+	full-match:		is [to-word append copy brsymb 0]
+	sbrsymb1:		is [append copy "_" brsymb]
+	sbrsymb2:		is [append copy "_'" brsymb]
+	defs: 			clear []
+	sym:			none
+	sbrdef1:		none
+	sbrdef2:		none
+	bckref: 		none
+	assignments: 	clear []
+	replace:		off
+	replacement:	none
+	br-num: 		0
 	
 	next-br: does [br-num: br-num + 1]
 	
 	cs-num: 0 
 	empty-cs?: false
 	cs-open?: false
-	next-cs: does [to-word append copy "cs_" cs-num: cs-num + 1] 						; charset-number-word generator
+	next-cs: does [to-word append copy "cs_" cs-num: cs-num + 1] 									; charset-number-word generator
 		
-	make-charset: func [s /local c e s1 s2 negated cs rpt cb][						; cb -- charset definition; e -- continuation string
-		c: copy [] rpt: none										; c -- whole charset expression; rpt -- quantifier
+	make-charset: func [s /local c e s1 s2 negated cs rpt cb][									; cb -- charset definition; e -- continuation string
+		c: copy [] rpt: none													; c -- whole charset expression; rpt -- quantifier
 		cs-open?: true
-		if negated: to-logic find/match s #"^^"	[s: next s]						; if charset is negated, jump over ^
-		s1: index? s											; register position after possible ^
-		system/words/parse s [										; let's form the charset
-			collect set cb some [									; collect charset definitional elements
-				 #"]" s2: [									; register current position after ]
-					if (s1 < ((index? s2) - 1))	[					; if ] is not in the beginning of charclass
-						any #"]" opt [collect set rpt repeater]				; we are in the end of charset, check for quantifiers, register, exit
-						(cs-open?: false) e: break					; register closing of charset definition
+		if negated: to-logic find/match s #"^^"	[s: next s]									; if charset is negated, jump over ^
+		s1: index? s														; register position after possible ^
+		system/words/parse s [													; let's form the charset
+			collect set cb some [												; collect charset definitional elements
+				 #"]" s2: [												; register current position after ]
+					if (s1 < ((index? s2) - 1))	[								; if ] is not in the beginning of charclass
+						any #"]" opt [collect set rpt repeater]							; we are in the end of charset, check for quantifiers, register, exit
+						(cs-open?: false) e: break								; register closing of charset definition
 					] | [ 
-						if (not empty-cs?) [keep (#"]")] 				; if empty charsets are not allowed, then keep ] as part of charset definition
-						| (cs-open?: false) e: break					; otherwise, register closing, position and exit
+						if (not empty-cs?) [keep (#"]")] 							; if empty charsets are not allowed, then keep ] as part of charset definition
+						| (cs-open?: false) e: break								; otherwise, register closing, position and exit
 					]
 				]  											
-				| "-]" keep (#"-") 								; if - occurs before closing ]
-					   any #"]" opt [collect set rpt repeater] 				; collect quantifier, if any
-					   (cs-open?: false) e: break						; declare charclass closed, register position, go back
-				| "^^" keep (#"^^")								; we can keep ^, because its negation meaning is taken care of
-				| ["\n" keep (#"^/") | "\r" keep (#"^M")]					; keep linebreakers
+				| "-]" keep (#"-") 											; if - occurs before closing ]
+					   any #"]" opt [collect set rpt repeater] 							; collect quantifier, if any
+					   (cs-open?: false) e: break									; declare charclass closed, register position, go back
+				| "^^" keep (#"^^")											; we can keep ^, because its negation meaning is taken care of
+				| ["\n" keep (#"^/") | "\r" keep (#"^M")]								; keep linebreakers
 				| #"\" [
-					ahead 	[clmetaset | metaset] 						; metachars may be escaped 
+					ahead 	[clmetaset | metaset] 									; metachars may be escaped 
 					keep 	[clmetaset | metaset] 							
-					| (cause-error 'user 'message ["Unescaped \ in char-class!"])		; only one, which sould necessarily be escaped
+					| (cause-error 'user 'message ["Unescaped \ in char-class!"])					; only one, which sould necessarily be escaped
 				]					
-				| #"-" s2: [if (s1 = ((index? s2) - 1)) keep (#"-")				; we have just a dash
-					| keep ('-) ]								; we have a range
-				| keep clliteral 								; keep more or less anything
-				| (cause-error 'user 'message ["Malformed charset?"])				; just for checking
+				| #"-" s2: [if (s1 = ((index? s2) - 1)) keep (#"-")							; we have just a dash
+					| keep ('-) ]											; we have a range
+				| keep clliteral 											; keep more or less anything
+				| (cause-error 'user 'message ["Malformed charset?"])							; just for checking
 			]
 		]
-		cs: next-cs											; new word to bind charset to
+		cs: next-cs														; new word to bind charset to
 		if (cs-open? and empty? e) [
 			cause-error 'user 'message ["Character class unclosed!"]
 		]
-		if to-logic negated [cb: compose/deep [not [(cb)]]]						; if charset is negated, make negation
+		if to-logic negated [cb: compose/deep [not [(cb)]]]									; if charset is negated, make negation
 		append defs copy compose/deep [ 
 			(to-set-word cs) charset [(cb)]
-		] 												; escape parse to actually make a charset
-		if rpt [append c either block? rpt/1 [rpt/1][rpt]]						; did we have quantifiers? Append them here
-		append c cs 											; and finally a word referring to created charset
-		compose/deep [[(c)] (e)]									; send proudly back charset def and remaining string after charset
+		] 															; escape parse to actually make a charset
+		if rpt [append c either block? rpt/1 [rpt/1][rpt]]									; did we have quantifiers? Append them here
+		append c cs 														; and finally a word referring to created charset
+		compose/deep [[(c)] (e)]												; send proudly back charset def and remaining string after charset
 	]
 	group: 	[if (not cs-open?) [
-		#"(" 												; named group
+		#"(" 															; named group
 		[	"?P<" 	copy gname to #">" 
 		| 	"?'" 	copy gname to #"'" 
 		| 	"?<" 	copy gname to #">"
@@ -162,44 +176,37 @@ re-ctx: make reactor! [
 			capturing: on
 			if 1 < length? levelcap [to-short: on]
 			insert levelnam copy gname
-			unless simp [insert levelsym next-br]
+			insert levelsym next-br
 			insert/only levelgrp copy longout 
 			insert/only levelgr2 copy shortout
 			if debugging [probe compose ["lgrp:" (levelgrp)]]
 			longout:	clear []
 			shortout: 	clear []
 		)
-	|	[ #"("  #"?"  #"+" 	copy n number  #")"							; relative subroutine (forward)
+	|	[ #"("  "?+" 	copy n number  #")"											; relative subroutine (forward)
 		| "\g"  
-			[	#"<"  #"+" 	copy n number  #">"
-			| 	#"'"  #"+" 	copy n number  #"'"]
-		] keep (to-word append copy "_" br-num + to-integer n)
-	|	[ #"("  #"?"  #"-" 	copy n number  #")"							; relative subroutine (backward)
+			[	"<+" 	copy n number  #">"
+			| 	"'+" 	copy n number  #"'"]
+		] keep (to-word append copy sbrsymb1 br-num + to-integer n)
+	|	[ #"("  "?-" 	copy n number  #")"											; relative subroutine (backward)
 		| "\g"  
-			[	#"<"  #"-" 	copy n number  #">"
-			| 	#"'"  #"-" 	copy n number  #"'"]
-		] keep (to-word append copy "_" br-num + 1 - to-integer n)
-	|	[ #"("  "?" 	 copy n number  #")" 								; absolute subroutine reference
+			[	"<-" 	copy n number  #">"
+			| 	"'-" 	copy n number  #"'"]
+		] keep (to-word append copy sbrsymb1 br-num + 1 - to-integer n)
+	|	[ #"("  #"?" 	 copy n number  #")" 											; absolute subroutine reference
 		| "\g"  
-			[	"<" 	 copy n number  #">"
-			| 	"'" 	 copy n number  #"'"]
-		] keep (to-word append copy "_" n)
-	|	[ #"("  											; named subroutine reference
+			[	#"<" 	 copy n number  #">"
+			| 	#"'" 	 copy n number  #"'"]
+		] keep (to-word append copy sbrsymb1 n)
+	|	[ #"("  														; named subroutine reference
 			[	"?&" 	copy gname to #")" 
 			| 	"?P>" 	copy gname to  #")"]
 		| "\g"  
-			[	"<" 	copy gname to  #">"
-			| 	"'" 	copy gname to  #"'"]
+			[	#"<" 	copy gname to  #">"
+			| 	#"'" 	copy gname to  #"'"]
 		] skip 
 		keep (to-word append copy "_" gname)
-	|	[ #"("  "?P=" 	copy gname to #")" 								; reference to named captured string
-		| "\k"  
-			[	"'" 	copy gname to #"'" 
-			| 	"<" 	copy gname to #">" 
-			| 	"{" 	copy gname to #"}"]
-		] skip 
-		keep (to-word gname)
-	|	#"("  "?:" (											; non-capturing group
+	|	"(?:" (															; non-capturing group
 			insert levelcap capturing 
 			capturing: off
 			insert/only levelgrp copy longout 
@@ -207,9 +214,9 @@ re-ctx: make reactor! [
 			longout: 	clear []
 			shortout: 	clear []
 		) 
-	|	#"(" ( 												; capturing group
+	|	#"(" ( 															; capturing group
 			insert levelcap capturing
-			either simp [										; unless simplex
+			either simp [													; unless simplex
 				capturing: off
 			][
 				capturing: on
@@ -223,18 +230,18 @@ re-ctx: make reactor! [
 			longout: 	clear []
 			shortout: 	clear []
 		)
-	| 	#")"  opt collect set rpt repeater 								; end of group, check for quantifier
+	| 	#")"  opt collect set rpt repeater 											; end of group, check for quantifier
 		(
-			either capturing [									; are we capturing?
+			either capturing [												; are we capturing?
 				all [
 					nam: take levelnam 
 					append defs to-set-word copy append copy "_" nam
 					nam: to-word copy nam
 				] 
 				sym: take levelsym 
-				sbrdef1: to-word append copy "_" sym
-				sbrdef2: to-word append either to-short [copy "_'"][copy "_"] sym
-				bckref: to-word append copy "br_" sym
+				sbrdef1: to-word append copy sbrsymb1 sym
+				sbrdef2: to-word append either to-short [copy sbrsymb2][copy sbrsymb1] sym
+				bckref: to-word append copy brsymb sym
 				append/only append defs to-set-word sbrdef1 copy longout 
 				all [
 					starting = 'loose 
@@ -247,27 +254,27 @@ re-ctx: make reactor! [
 				shortout: append append take levelgr2 rpt sbrdef2
 				assignments: make block! 5
 				either glob [
-					unless block? br_/(sym) [extend br_ reduce [sym make block! 5]]
-					append assignments compose [append select br_ (sym) (bckref)]
+					unless block? select get symbol sym compose [extend (symbol) reduce [sym make block! 5]]
+					append assignments compose [append select (symbol) (sym) (bckref)]
 					if nam [
-						unless block? br_/(nam) [extend br_ reduce [nam make block! 5]]
+						unless block? select get symbol nam compose [extend (symbol) reduce [nam make block! 5]]
 						append assignments compose [
 							(to-set-word nam) (bckref) 
-							append select br_ (to-lit-word nam) (bckref)
+							append select (symbol) (to-lit-word nam) (bckref)
 						]
 					]
 				][
-					append assignments compose [put br_ (sym) (bckref)]
+					append assignments compose [put (symbol) (sym) (bckref)]
 					if nam [
 						append assignments compose [
 							(to-set-word nam) (bckref) 
-							put br_ (to-lit-word nam) (bckref)
+							put (symbol) (to-lit-word nam) (bckref)
 						]
 					]
 				]
 				append/only longout to-paren assignments
 				if debugging [probe compose ["lout:" (longout)]]
-			][											; we are not capturing
+			][														; we are not capturing
 				longout: 	append/only append take levelgrp rpt copy longout
 				shortout: 	append/only append take levelgr2 rpt copy shortout
 			]
@@ -276,15 +283,15 @@ re-ctx: make reactor! [
 	| 	keep literal
 	]]
 	class: [
-		"[:" copy cl to ":]" 2 skip keep (to-word cl)							; this is in wrong place?
+		"[:" copy cl to ":]" 2 skip keep (to-word cl)										; this is in wrong place?
 	| 	#"[" s: 
 		(
-			set [c e] make-charset s 								; send string to the charset-factory
-			append longout c									; put the charset into place
+			set [c e] make-charset s 											; send string to the charset-factory
+			append longout c												; put the charset into place
 			append shortout c
 			e: any [find/last s e tail s]
 		)
-		:e												; continue after the charclass
+		:e															; continue after the charclass
 	]
 	special: [
 		  "\d" 		keep ('digit)
@@ -301,14 +308,34 @@ re-ctx: make reactor! [
 		| "\v"		keep (#"^K")
 	]
 	backref: [
-		#"\" copy n number keep (to-word append copy "br_" n)
+		[ #"("	"?P=" 	copy gname to #")" 											; reference to named captured string
+		| "\k"  
+			[	#"'" 	copy gname to #"'" 
+			| 	#"<" 	copy gname to #">" 
+			| 	#"{" 	copy gname to #"}"]
+		] skip 
+		keep (to-word gname)
+	|	#"\" copy n number 
+		keep (to-word append copy brsymb n)
+	]
+	replref: [#"\" [
+		[	#"'" copy n number #"'" 
+		|	#"<" copy n number #">" 
+		|	#"^{" copy n number #"^}" 
+		] 	keep (to-word append copy brsymb n)
+	|	[	"'" copy gname to #"'" 
+		|	#"<" copy gname to #">"
+		|	#"^{" (print "hi") copy gname to #"^}"
+		]]
+		skip 
+		keep (to-word gname)
 	]
 	linestart: 		is [either ml [[#"^^" keep (#"^/")]][[#"^^" (starting: 'strict)]]]
 	lineend:		is [either ml [[#"$" keep ([ahead [opt #"^/" end | #"^/"]])]][[#"$" keep ([opt #"^/" end])]]] 
-	wordboundary:	["\b" keep (							; does not react on changing word / nonword values
+	wordboundary:	["\b" keep (												; does not react on changing word / nonword values
 		[s: [
-			if ((1 = index? s) or find nonword first back s) 		[ahead word] 
-			| if (find word first back s) 					[ahead [nonword | end]]
+			if ((1 = index? s) or find nonword first back s) 	[ahead word] 
+			| if (find word first back s) 				[ahead [nonword | end]]
 		]]
 	)]
 	anchor:			[linestart | lineend | wordboundary]
@@ -358,7 +385,7 @@ re-ctx: make reactor! [
 		| #")" 		(cause-error 'user 'message ["Invalid use of closing parentheses!"])
 	]
 	rmfree: [any [
-			remove [any wspace #"#" thru linebreak]				; comments
+			remove [any wspace #"#" thru linebreak]							; comments
 		| 	change "\ " " "
 		|	"\[" | "\]"
 		|	#"[" (cs-open?: yes)
@@ -371,25 +398,25 @@ re-ctx: make reactor! [
 		| 	anchor
 		| 	altern
 		| 	comm
+		| 	backref
 		| 	group
 		| 	class
 		| 	special
-		| 	backref
 		| 	#"." 	keep ('anychar)  
 		| 	char 
 		| 	exception
 	]
 	repeater: [
-		  #"^{"  copy n1 number  #","  copy n2 number  #"^}" 
-											keep (reduce [to-integer n1 to-integer n2])
-		| #"^{"  #","  copy n2 number  #"^}" 					keep (reduce [0  to-integer n2])
-		| #"^{"  copy n1 number  #","  "^}"					keep (reduce [to-integer n1 10000])
-		| #"^{"  copy n1 number  #"^}"						keep (to-integer n1)
-		| #"?" 									keep ('opt)
-		| #"+" 									keep ('some)
-		| #"*" 									keep ('any) 
+			#"^{"  copy n1 number  #","  copy n2 number  #"^}" 
+									keep (reduce [to-integer n1 to-integer n2])
+		| 	#"^{"  #","  copy n2 number  #"^}" 		keep (reduce [0  to-integer n2])
+		| 	#"^{"  copy n1 number  #","  "^}"		keep (reduce [to-integer n1 10000])
+		| 	#"^{"  copy n1 number  #"^}"			keep (to-integer n1)
+		| 	#"?" 						keep ('opt)
+		| 	#"+" 						keep ('some)
+		| 	#"*" 						keep ('any) 
 	]
-	build: func [inner /local s e c t r n mp][					; main workhorse
+	build: func [inner /local s e c t r n mp][			; main workhorse
 		longout: 	clear []
 		shortout: 	clear []
 		system/words/parse/case inner [
@@ -398,30 +425,52 @@ re-ctx: make reactor! [
 				opt collect set rpt repeater
 				(
 					if block? first rpt [rpt: first rpt] 
+					if debugging [probe compose ["seq rpt:" (seq) (rpt)]]
 					append longout 	compose [(rpt) (seq)] 
 					append shortout compose [(rpt) (seq)]
+					if debugging [probe compose/deep ["short long:" [(shortout)] [(longout)]]]
 				) 											 
 			]
 		]
 		compose/deep [[(shortout)] [(longout)]]
 	]
 
-	finish: func [inner /local short long][
+	finish: func [inner /local short long repl][
 		set [short long] build copy inner 
-		append _spec switch starting [
-			strict [compose/deep [copy br_0 thru [(long)] (to-paren [br_/0: br_0])]] 
-			loose [either glob [
-				compose/deep [some [to [(short)] copy br_0 thru [(long)] (to-paren [append br_/0 br_0])]]
-			][
-				compose/deep [to [(short)] copy br_0 thru [(long)] (to-paren [br_/0: br_0])]
-			]]
+		append _spec switch type?/word replacement [
+			string! [
+				system/words/parse replacement [collect set repl any [replref | backref | char]]
+				if debugging [probe compose/deep ["repl:" [(repl)]]]
+				compose/deep [
+					(if replacement [s:]) copy (full-match) thru [(long)] 
+					(to-paren append either glob [append select][put] compose [(symbol) 0 (full-match)])
+					(if replacement compose/deep [:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])])
+				]
+			]
+			block! [
+				
+			]
+			map! [
+				
+			]
+			function! [
+				
+			]
+		]
+		all [
+			starting = 'loose
+			insert _spec compose/deep [to [(short)]]
+			glob
+			_spec: insert/only copy [some] _spec
 		]
 		append _spec switch ending [
-			strict 			[[opt #"^/" end]] 
+			strict 		[[opt #"^/" end]] 
 			strictissima 	['end]
-			loose 			[[to end]]
+			loose 		[[to end]]
 		]
+		if debugging [probe compose/deep ["_spec:" [(_spec)]]]
 	]
+	
 	flavors: [JS [empty-cs?: true]]							; just a probe so far
 	
 	set 'regex func [
@@ -436,32 +485,39 @@ re-ctx: make reactor! [
 		/singleline	"see next"	/s					"lets dot match linebreaks also"
 		/freespace	"see next"	/x					"lets you use whitespace, to make re more readable"
 		/global		"see next"	/g					"global mode, puts captured strings into block"
-		/simplex	"see next"	/n					"non-numbering mode, only named groups are captured (and numbered)"
-		/try	"try specific flavor of regexp"	flavor	[word!] 		"flavor to try"
+		/simplex	"see next"	/n					"non-numbering mode, only named groups are captured"
+		/replace 	"Captured matches are used in replacements"
+			replacement [string! block! map! function!] {String replaces any overall matches, 
+				block replaces global overall matches in order, 
+				map specifies numbered and named groups to use in replacement,
+				and function calls unary function with corresponding captured string as argument}
+		/try		"try specific flavor of regexp"	flavor	[word!] "flavor to try"
 		/local inner
 	][  
-		debugging: 	any [debug off]
-		cs-num:   	0
-		br-num:		0
-		_spec:		make block! 100
-		inner: 		clear ""
-		nocase:		any [icase 		i all [modes find optstr "i"] off]
-		self/ml: 	any [multiline  m all [modes find optstr "m"] off]
-		self/sl: 	any [singleline s all [modes find optstr "s"] off]
-		freesp: 	any [freespace 	x all [modes find optstr "x"] off]
-		glob:		any [global 	g all [modes find optstr "g"] off]
-		simp:		any [simplex 	n all [modes find optstr "n"] off]
-		empty-cs?: 	false
-		cs-open?: 	false
-		levelgrp: 	make block! 5
-		levelgr2:	make block! 5
-		levelcap: 	make block! 5
-		levelsym: 	make block! 5
-		levelnam: 	make block! 5
-		capturing: 	off
-		to-short: 	off
-		defs: 		make block! 5
-		br_:		either glob [make map! reduce [0 make block! 10]][make map! reduce [0 make string! 20]]
+		debugging: 		any [debug off]
+		cs-num:   		0
+		br-num:			0
+		_spec:			make block! 100
+		inner: 			clear ""
+		nocase:			any [icase 	i all [modes find optstr "i"] off]
+		self/ml: 		any [multiline  m all [modes find optstr "m"] off]
+		self/sl: 		any [singleline s all [modes find optstr "s"] off]
+		freesp: 		any [freespace 	x all [modes find optstr "x"] off]
+		glob:			any [global 	g all [modes find optstr "g"] off]
+		simp:			any [simplex 	n all [modes find optstr "n"] off]
+		self/replace:		any [replace off]
+		self/replacement:	any [replacement none]
+		empty-cs?: 		false
+		cs-open?: 		false
+		levelgrp: 		make block! 5
+		levelgr2:		make block! 5
+		levelcap: 		make block! 5
+		levelsym: 		make block! 5
+		levelnam: 		make block! 5
+		capturing: 		off
+		to-short: 		off
+		defs: 			make block! 5
+		set symbol		either glob [make map! reduce [0 make block! 10]][make map! reduce [0 make string! 20]]
 		
 		if freesp [system/words/parse re rmfree cs-open?: no probe re]
 		
@@ -469,25 +525,25 @@ re-ctx: make reactor! [
 		
 		system/words/parse re [
 			[
-				  ["\A" | "\`" | if (not ml) ["^^"]]					(starting: 'strict)
-				| 									(starting: 'loose)
+				  ["\A" | "\`" | if (not ml) ["^^"]]								(starting: 'strict)
+				| 												(starting: 'loose)
 			]
 			copy inner [
 				to [
 					#"\" copy s skip 
 					if (find [39 90] to-integer to-char s) end 			;#"Z" #"'"
 				| 	if (not ml) #"$" end
-				]									(ending: 'strict) 
+				]												(ending: 'strict) 
 			| 	to [
 					#"\" copy s skip 
 					if (122 = to-integer to-char s) end
-				]									(ending: 'strictissima) ;#"z" 
-			| 	to end									(ending: 'loose)
+				]												(ending: 'strictissima) ;#"z" 
+			| 	to end												(ending: 'loose)
 			] 
 			(finish copy inner)
 		]
 		_spec: either empty? defs [_spec][head insert/only _spec to-paren defs]
-		bind _spec: load mold _spec re-ctx							; rebinding corrects some strange behavior
+		bind _spec: load mold _spec re-ctx									; rebinding corrects some strange behavior
 		if spec [print mold _spec]
 		either parse [
 			return either nocase [system/words/parse str _spec][system/words/parse/case str _spec]
@@ -496,139 +552,4 @@ re-ctx: make reactor! [
 		]
 	]
 ]
-examples: :comment 
-examples [
-	regex/parse "[a-c]+" "abcaaabbbcaab"
-	regex/parse/spec "[a-c]+" "abcaaabbbcaab"
-	=> [(cs_1: charset [#"a" - #"c"]) to [some cs_1] copy br_0 thru [some cs_1] (br_/0: br_0) to end]
-	
-	ip-v4: "\A(25[0-5]|2[0-4]\d|1\d\d|[1-9]\d|\d)(?:\.(?1)){3}\z"
-	regex/parse/spec ip-v4 "127.0.0.25"
-	=> [(cs_1: charset [#"0" - #"5"] cs_2: charset [#"0" - #"4"] cs_3: charset [#"1" - #"9"] 
-		_1: [#"2" #"5" cs_1 | #"2" cs_2 digit | #"1" digit digit | cs_3 digit | digit]) 
-		copy br_0 thru [copy br_1 _1 (put br_ 1 br_1) 3 [#"." _1]] (br_/0: br_0) end]
-	>> regex/parse ip-v4 "255.255.255.256"
-	== false
-
-	email: "^^[a-zA-Z0-9_.+-]*@[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+$"
-	regex/spec/parse email "n00b@lost.island.org"
-	=> [(cs_1: charset [#"a" - #"z" #"A" - #"Z" #"0" - #"9" #"_" #"." #"+" #"-"] 
-		cs_2: charset [#"a" - #"z" #"A" - #"Z" #"0" - #"9" #"-"] 
-		cs_3: charset [#"a" - #"z" #"A" - #"Z" #"0" - #"9" #"." #"-"]) 
-		copy br_0 thru [some cs_1 #"@" some cs_2 #"." some cs_3] (br_/0: br_0) opt #"^/" end]
-	
-	parse "very02.common@email.address.com" regex email
-	
-	; named groups, captured strings 
-	>> regex/parse/spec "<h1[^^>]*>\n?(?P<title>[^^<\n]*)\n?</h1>" read http://www.red-lang.org/
-	[(cs_1: charset [not [#">"]] cs_2: charset [not [#"<" #"^/"]] _title: _1: [any cs_2]) 
-		to [#"<" #"h" #"1" any cs_1 #">" opt #"^/" _1 opt #"^/" #"<" #"/" #"h" #"1" #">"] 
-		copy br_0 thru [#"<" #"h" #"1" any cs_1 #">" opt #"^/" copy br_1 _1 
-			(put br_ 1 br_1 title: br_1 put br_ 'title br_1) opt #"^/" #"<" #"/" #"h" #"1" #">"] 
-		(br_/0: br_0) to end]
-	== true
-	>> br_
-	== #(
-		0 "<h1 class='title'>^/Red Programming Language^/</h1>"
-		1 "Red Programming Language"
-		title: "Red Programming Language"
-	)
-	>> print title
-	Red Programming Language
-	
-	; absolute, relative and named subroutines in Perl syntax
-	regex/spec/parse "(?+1)(?'name'[abc])(?1)(?-1)(?&name)" "abcab"
-	=> [(cs_1: charset [#"a" #"b" #"c"] _name: _1: [cs_1]) 
-	to [_1 _1 _1 _1 _name] 
-	copy br_0 thru [_1 copy br_1 _1 (put br_ 1 br_1 name: br_1 put br_ 'name br_1) _1 _1 _name] 
-	(br_/0: br_0) to end] 
-	; same in Ruby syntax
-	regex/spec/parse "\g'+1'(?'name'[abc])\g'1'\g'-1'\g'name'" "bbccc"
-	=> [(cs_1: charset [#"a" #"b" #"c"] _name: _1: [cs_1]) 
-	to [_1 _1 _1 _1 _name] 
-	copy br_0 thru [_1 copy br_1 _1 (put br_ 1 br_1 name: br_1 put br_ 'name br_1) _1 _1 _name] 
-	(br_/0: br_0) to end]
-	; PCRE
-	regex/spec/parse "(?P<name>[abc])(?1)(?P>name)" "bca"
-	=> [(cs_1: charset [#"a" #"b" #"c"] _name: _1: [cs_1]) 
-	to [_1 _1 _name] 
-	copy br_0 thru [copy br_1 _1 (put br_ 1 br_1 name: br_1 put br_ 'name br_1) _1 _name] 
-	(br_/0: br_0) to end]
-	
-	; comments
-	regex/spec "abc(?# Simple re )"
-	=> [to [#"a" #"b" #"c"] copy br_0 thru [#"a" #"b" #"c"] (br_/0: br_0) to end]
-	
-	; freespace demonstration + named group + wordboundary + backreference
-	; without wordboundary invalid IP addresses like eg 192.186.1.265 will be 
-	; reckognized as 192.186.1.26
-	ip-v4: {
-	(   						# We are capturing the whole address
-		?P< ipaddr >				# Let's give it a name
-		(						# Begin definition of quad number
-			\b (?:					# Quad starts (wordboundary + noncapturing group)
-					25[0-5]				# Highest quads			250-255
-				|	2[0-4]\d			# Second highest quads 		200-249
-				|	1\d\d				# Quads in second hundred 	100-199
-				|	[1-9]\d				# Quads 			 10-99
-				|	\d				# Quads 			  0-9
-			) \b					# Quad ends (nc-group ends + wordboundary)
-		)						# End definition of quad number,
-								# and check first quad
-		(?: 					# Begin non-capturing group
-			\.					# check for dot
-			(? 2 ) 					# and call quad definition subroutine
-		)    					# End group
-		{ 3 }					# Iterate last group 3 times 
-	)
-}
-	>> regex/parse/freespace ip-v4 "some text 192.168.1.65 around the address"
-	== true
-	>> ipaddr
-	== "192.168.1.65"
-	>> regex/parse/freespace ip-v4 "some text 192.168.1.265 around the address"
-	== false
-
-	; global mode with nested groups
-	>> regex/parse/g "(\w(\w{1,2}))\W(\w+)" "per aspera ad astra"
-	== true
-	>> br_
-	== #(
-		0 ["per aspera" "ad astra"]
-		2 ["er" "d"]
-		1 ["per" "ad"]
-		3 ["aspera" "astra"]
-	)
-	
-	; global + simplex (non-capturing) modes 
-	>> regex/parse/g/n "(\w(\w{1,2}))\W(\w+)" "per aspera ad astra"
-	== true
-	>> br_
-	== #(
-		0 ["per aspera" "ad astra"]
-	)
-
-	; as previous + named groups
-	>> regex/parse/g/n "(?<pre>\w(\w{1,2}))\W(?<nom>\w+)" "per aspera ad astra"
-	== true
-	>> br_
-	== #(
-		0 ["per aspera" "ad astra"]
-		1 ["per" "ad"]
-		pre: ["per" "ad"]
-		2 ["aspera" "astra"]
-		nom: ["aspera" "astra"]
-	)
-	
-	; different groups with same name
-	>> regex/parse/g/n "(?<pre>\w(\w{1,2}))\W(?<pre>\w+)" "per aspera ad astra"
-	== true
-	>> br_
-	== #(
-		0 ["per aspera" "ad astra"]
-		1 ["per" "ad"]
-		pre: ["per" "aspera" "ad" "astra"]
-		2 ["aspera" "astra"]
-	)
-
-]
+comment {}

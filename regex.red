@@ -325,7 +325,7 @@ re-ctx: make reactor! [
 		] 	keep (to-word append copy brsymb n)
 	|	[	"'" copy gname to #"'" 
 		|	#"<" copy gname to #">"
-		|	#"^{" (print "hi") copy gname to #"^}"
+		|	#"^{" copy gname to #"^}"
 		]]
 		skip 
 		keep (to-word gname)

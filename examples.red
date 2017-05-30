@@ -20,13 +20,14 @@ regex/spec/parse email "n00b@lost.island.org"
 parse "very02.common@email.address.com" regex email
 ;== true
 
-	; named groups, captured strings 
+; named groups, captured strings 
 regex/parse/spec "<h1[^^>]*>\n?(?P<title>[^^<\n]*)\n?</h1>" read http://www.red-lang.org/
-;	[(cs_1: charset [not [#">"]] cs_2: charset [not [#"<" #"^/"]] _title: _1: [any cs_2]) 
-;		to [#"<" #"h" #"1" any cs_1 #">" opt #"^/" _1 opt #"^/" #"<" #"/" #"h" #"1" #">"] 
-;		copy br_0 thru [#"<" #"h" #"1" any cs_1 #">" opt #"^/" copy br_1 _1 
-;			(put br_ 1 br_1 title: br_1 put br_ 'title br_1) opt #"^/" #"<" #"/" #"h" #"1" #">"] 
-;		(br_/0: br_0) to end]
+;[(cs_1: charset [not [#">"]] cs_2: charset [not [#"<" #"^/"]] _title: _1: [any cs_2]) 
+;to [#"<" #"h" #"1" any cs_1 #">" opt #"^/" _1 opt #"^/" #"<" #"/" #"h" #"1" #">"] 
+;copy br_0 thru [#"<" #"h" #"1" any cs_1 #">" opt #"^/" copy br_1 _1 
+;	(put br_ 1 br_1 title: br_1 put br_ 'title br_1) 
+;	opt #"^/" #"<" #"/" #"h" #"1" #">"] 
+;(br_/0: br_0) to end]
 ;== true
 br_
 ;== #(
@@ -37,32 +38,34 @@ br_
 print title
 ;	Red Programming Language
 	
-	; absolute, relative and named subroutines in Perl syntax
+; absolute, relative and named subroutines in Perl syntax
 regex/spec/parse "(?+1)(?'name'[abc])(?1)(?-1)(?&name)" "abcab"
 ; [(cs_1: charset [#"a" #"b" #"c"] _name: _1: [cs_1]) 
 ;	to [_1 _1 _1 _1 _name] 
 ;	copy br_0 thru [_1 copy br_1 _1 (put br_ 1 br_1 name: br_1 put br_ 'name br_1) _1 _1 _name] 
 ;	(br_/0: br_0) to end] 
-	; same in Ruby syntax
+
+; same in Ruby syntax
 regex/spec/parse "\g'+1'(?'name'[abc])\g'1'\g'-1'\g'name'" "bbccc"
 ; [(cs_1: charset [#"a" #"b" #"c"] _name: _1: [cs_1]) 
 ;	to [_1 _1 _1 _1 _name] 
 ;	copy br_0 thru [_1 copy br_1 _1 (put br_ 1 br_1 name: br_1 put br_ 'name br_1) _1 _1 _name] 
 ;	(br_/0: br_0) to end]
-	; PCRE
+
+; PCRE
 regex/spec/parse "(?P<name>[abc])(?1)(?P>name)" "bca"
 ; [(cs_1: charset [#"a" #"b" #"c"] _name: _1: [cs_1]) 
 ;	to [_1 _1 _name] 
 ;	copy br_0 thru [copy br_1 _1 (put br_ 1 br_1 name: br_1 put br_ 'name br_1) _1 _name] 
 ;	(br_/0: br_0) to end]
 	
-	; comments
+; comments
 regex/spec "abc(?# Simple re )"
 ; [to [#"a" #"b" #"c"] copy br_0 thru [#"a" #"b" #"c"] (br_/0: br_0) to end]
 	
-	; freespace demonstration + named group + wordboundary + backreference
-	; without wordboundary invalid IP addresses like eg 192.186.1.265 will be 
-	; reckognized as 192.186.1.26
+; freespace demonstration + named group + wordboundary + backreference
+; without wordboundary invalid IP addresses like eg 192.186.1.265 will be 
+; reckognized as 192.186.1.26
 ip-v4: {
 	(   						# We are capturing the whole address
 		?P< ipaddr >				# Let's give it a name
@@ -90,7 +93,7 @@ ipaddr
 regex/parse/freespace ip-v4 "some text 192.168.1.265 around the address"
 ;== false
 
-	; global mode with nested groups
+; global mode with nested groups
 regex/parse/g "(\w(\w{1,2}))\W(\w+)" "per aspera ad astra"
 ;== true
 br_
@@ -101,7 +104,7 @@ br_
 ;	3 ["aspera" "astra"]
 ;)
 	
-	; global + simplex (non-capturing) modes 
+; global + simplex (non-capturing) modes 
 regex/parse/g/n "(\w(\w{1,2}))\W(\w+)" "per aspera ad astra"
 ;== true
 br_
@@ -109,7 +112,7 @@ br_
 ;	0 ["per aspera" "ad astra"]
 ;)
 
-	; as previous + named groups
+; as previous + named groups
 regex/parse/g/n "(?<pre>\w(\w{1,2}))\W(?<nom>\w+)" "per aspera ad astra"
 ;== true
 br_
@@ -121,7 +124,7 @@ br_
 ;	nom: ["aspera" "astra"]
 ;)
 	
-	; different groups with same name
+; different groups with same name
 regex/parse/g/n "(?<pre>\w(\w{1,2}))\W(?<pre>\w+)" "per aspera ad astra"
 ;== true
 br_
@@ -132,7 +135,7 @@ br_
 ;	2 ["aspera" "astra"]
 ;)
 	
-	; changing match-map's symbol
+; changing match-map's symbol
 re-ctx/symbol: '¤
 ;== ¤
 regex/parse "a(b)c" "xabcx"
@@ -158,16 +161,16 @@ parse "xabcx" regex "a(b)c" backreference
 ;	1 "b"
 ;)
 
-  ; replacement of overall match
+; replacement of overall match
 regex/parse/replace "like" x: "I like Red" "love" head x
 ;== "I love Red"
 
-  ; replacement of outer word
+; replacement of outer word
 var: "trick" regex/parse/replace "abc" x: "xabcx" "\'var'" head x
 ;== "xtrickx"
 var: "track" parse x: "xabcx" regex/replace "abc" "\'var'" head x
 ;== "xtrackx"
 	
-  ;global replacement of overall match
+; global replacement of overall match
 regex/parse/replace/g "(\w+) (\w+)( ?)" x: "first second third fourth" "\2 \1\3" head x
 ;== "second first fourth third"

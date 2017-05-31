@@ -440,7 +440,7 @@ re-ctx: make reactor! [
 		set [short long] build copy inner 
 		append _spec switch starting [
 			strict [compose/deep [
-				copy (full-match) thru [(long)] 
+				copy (full-match) [(long)] 
 				(to-paren compose [put (symbol) 0 (full-match)])
 			]] 
 			loose [either glob [

@@ -171,6 +171,19 @@ var: "trick" regex/parse/replace "abc" x: "xabcx" "\'var'" head x
 var: "track" parse x: "xabcx" regex/replace "abc" "\'var'" head x
 ;== "xtrackx"
 	
+; replacement of overall match
+>> regex/parse/replace "like" x: "I like Red" "love" head x
+== "I love Red"
+
 ; global replacement of overall match
 regex/parse/replace/g "(\w+) (\w+)( ?)" x: "first second third fourth" "\2 \1\3" head x
 ;== "second first fourth third"
+
+; global replacement2
+regex/parse/replace/g "(\w\w)\w+" x: "first second third fourth" "\1" head x
+;== "fi se th fo"
+
+; global replacement with block
+a: "first" regex/parse/g/replace "\w+" x: "1 second 3" [a "\0" "third"] head x
+;== "first second third"
+

@@ -319,13 +319,13 @@ re-ctx: make reactor! [
 		keep (to-word append copy brsymb n)
 	]
 	replref: [#"\" [
-		[	#"'" copy n number #"'" 
-		|	#"<" copy n number #">" 
-		|	#"^{" copy n number #"^}" 
+		[	#"'" 	copy n number #"'" 
+		|	#"<" 	copy n number #">" 
+		|	#"^{" 	copy n number #"^}" 
 		] 	keep (to-word append copy brsymb n)
-	|	[	"'" copy gname to #"'" 
-		|	#"<" copy gname to #">"
-		|	#"^{" copy gname to #"^}"
+	|	[	"'" 	copy gname to #"'" 
+		|	#"<" 	copy gname to #">"
+		|	#"^{" 	copy gname to #"^}"
 		]]
 		skip 
 		keep (to-word gname)

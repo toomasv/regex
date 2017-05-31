@@ -5,7 +5,7 @@ Red [
 	History:	{
 		Started: 	2017-05-30 from %regex.red
 		2017-05-31	Improved pattern. Now simple matches with no modes can be done wo delimiters.
-				eg. "xyzabc" ~ "abc"
+				eg. "abcbba" ~ "^^[abc]+$"
 	}
 ]
 

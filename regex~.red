@@ -2,7 +2,10 @@ Red [
 	Author: 	"Toomas Vooglaid"
 	file: 		"%regex~.red"
 	Purpose: 	{Perl-like regex for Red}
-	History:	{Started: 2017-05-30 from %regex.red}
+	History:	{
+		Started: 	2017-05-30 from %regex.red
+		2017-05-31	Improved pattern. Now simple matches with no modes can be done wo delimiters.
+	}
 ]
 
 re-ctx: make reactor! [
@@ -437,11 +440,14 @@ re-ctx: make reactor! [
 		
 		mode: charset "imsxgn"
 		parse rex [
-			copy basemode opt [#"m" | #"s"]
-			copy delim skip
-			copy re to delim skip
-			[if (basemode = "s") copy replacement to delim skip | none]
-			copy modes any mode end
+			[
+				copy basemode opt [#"m" | #"s"]
+				copy delim skip
+				copy re to delim skip
+				[if (basemode = "s") copy replacement to delim skip | none]
+				copy modes any mode end
+			] 
+			| 	copy re to end
 		]
 		
 		nocase:		any [find modes "i" off]

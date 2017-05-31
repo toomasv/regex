@@ -73,6 +73,11 @@ Red [
 					or as `\'1'` or `\'name'`. `name` may be assigned a value in matching, but also outside 
 					of the `regex`. The overall match is replaced by evaluated replacement. 
 					Also in `global` mode. Examples.
+				2017-05-31 -- corrected some mistakes. Reorganised replacement code. 
+					Added block! as replacement. In case of global parsing replaces matches in the block order,
+					eg. `a: "first" regex/parse/g/replace "\w+" x: "1 second 2" [a "\0" "third"] head x` would yield
+					`"first second third"`. Only as many matches will be changed as there are elements in the block, 
+					superfluous elements in the block will be disregarded. 
 			}
 	TBD: 	{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc
 				inline created words are leaking into global environment}
@@ -115,7 +120,17 @@ re-ctx: make reactor! [
 	br-num: 		0
 	
 	next-br: does [br-num: br-num + 1]
-	
+	map: function [series [series!] fn [any-function!] /only][
+		out: make type? series []
+		foreach i series [
+			either only [
+				append/only out fn i
+			][
+				append out fn i
+			]
+		]
+	]
+
 	cs-num: 0 
 	empty-cs?: false
 	cs-open?: false
@@ -319,18 +334,25 @@ re-ctx: make reactor! [
 		keep (to-word append copy brsymb n)
 	]
 	replref: [#"\" [
-		[	#"'" 	copy n number #"'" 
-		|	#"<" 	copy n number #">" 
-		|	#"^{" 	copy n number #"^}" 
+		[	#"'"	copy n number #"'" 
+		| 	#"<"	copy n number #">" 
+		| 	#"^{"	copy n number #"^}" 
 		] 	keep (to-word append copy brsymb n)
-	|	[	"'" 	copy gname to #"'" 
-		|	#"<" 	copy gname to #">"
-		|	#"^{" 	copy gname to #"^}"
-		]]
-		skip 
-		keep (to-word gname)
-	]
-
+	| 	[	#"'"	copy gname to #"'" 
+		| 	#"<"	copy gname to #">"	
+		| 	#"^{"	copy gname to #"^}"
+		] 	skip keep (to-word gname)
+	]]
+comment {		]
+		|
+		[if (glob) 
+			#"#" copy n number
+			#"/" copy m number
+			keep (
+				to-paren compose [pick select (symbol) (to-integer n) (to-integer m)]
+			)
+		]
+}
 	linestart: 		is [either ml [[#"^^" keep (#"^/")]][[#"^^" (starting: 'strict)]]]
 	lineend:		is [either ml [[#"$" keep ([ahead [opt #"^/" end | #"^/"]])]][[#"$" keep ([opt #"^/" end])]]] 
 	wordboundary:	["\b" keep (											; does not react on changing word / nonword values
@@ -420,7 +442,7 @@ re-ctx: make reactor! [
 	build: func [inner /local s e c t r n mp][				; main workhorse
 		longout: 	clear []
 		shortout: 	clear []
-		system/words/parse/case inner [
+		parse/case inner [
 			any [
 				collect set seq sequence  
 				opt collect set rpt repeater
@@ -433,49 +455,75 @@ re-ctx: make reactor! [
 				) 											 
 			]
 		]
+		any [
+			all [
+				ending = 'strict 
+				append shortout [[ahead [opt #"^/" end]]]
+				append longout 	[[ahead [opt #"^/" end]]]
+			]
+			all [
+				ending = 'strictissima 
+				append shortout [[ahead end]]
+				append longout 	[[ahead end]]
+			]
+		]
 		compose/deep [[(shortout)] [(longout)]]
 	]
 
 	finish: func [inner /local short long repl][
 		set [short long] build copy inner 
-		append _spec switch starting [
-			strict [compose/deep [
-				copy (full-match) [(long)] 
-				(to-paren compose [put (symbol) 0 (full-match)])
-			]] 
-			loose [either glob [
-				either replace [
-					system/words/parse replacement [collect set repl any [replref | backref | char]]
+
+		append _spec either replace [
+			switch type?/word replacement [
+				string! [
+					parse replacement [collect set repl any [replref | backref | char]]
 					if debugging [probe compose/deep ["repl:" [(repl)]]]
 					compose/deep [
-						some [
-							to [(short)] s: copy (full-match) thru [(long)] 
-							(to-paren compose [append select (symbol) 0 (full-match)])
-							:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])
-						]
-					]
-				][
-					compose/deep [
-						some [to [(short)] copy (full-match) thru [(long)] 
-						(to-paren compose [append select (symbol) 0 (full-match)])]
-					]
-				]
-			][
-				either replace [
-					system/words/parse replacement [collect set repl any [replref | backref | char]]
-					if debugging [probe compose/deep ["repl:" [(repl)]]]
-					compose/deep [
-						to [(short)] s: copy (full-match) thru [(long)] 
-						(to-paren compose [put (symbol) 0 (full-match)]) 
+						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+						(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
 						:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])
 					]
-				][
-					compose/deep [
-						to [(short)] copy (full-match) thru [(long)] 
-						(to-paren compose [put (symbol) 0 (full-match)])
-					]
 				]
-			]]
+				block! [
+					replacement: either empty? replacement [clear []][
+						map/only replacement func [rep][
+							parse reduce rep [collect any [replref | backref | char]]
+						]
+					]
+					compose/deep [
+						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+						(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
+						:s change [(short)] 
+						(to-paren append/only copy [rejoin] 
+							compose [
+								(to-paren compose/deep [
+									either reduce pick replacement length? select (symbol) 0 [
+										reduce pick replacement length? select (symbol) 0
+									][(full-match)]
+								])
+							]
+						)
+					]					
+				]
+				map! [
+					
+				]
+				function! [
+					
+				]
+			]
+		][
+			compose/deep [
+				copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+				(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
+			]
+		]
+		all [
+			starting = 'loose 
+			insert _spec compose/deep [to [(short)]]
+			ending = 'loose
+			glob 
+			_spec: append/only copy [some] compose [(_spec)]
 		]
 		append _spec switch ending [
 			strict 		[[opt #"^/" end]] 
@@ -500,7 +548,7 @@ re-ctx: make reactor! [
 		/global		"see next"	/g					"global mode, puts captured strings into block"
 		/simplex	"see next"	/n					"non-numbering mode, only named groups are captured"
 		/replace 	"Captured matches are used in replacements"
-			replacement [string!] {String replaces any overall matches, 
+			replacement [string! block!] {String replaces any overall matches, 
 				block replaces global overall matches in order 
 				and map specifies numbered and named groups to use in ereplacement}
 		/try		"try specific flavor of regexp"	flavor	[word!] "flavor to try"
@@ -531,7 +579,7 @@ re-ctx: make reactor! [
 		defs: 			make block! 5
 		set symbol		either glob [make map! reduce [0 make block! 10]][make map! reduce [0 make string! 20]]
 		
-		if freesp [system/words/parse re rmfree cs-open?: no probe re]
+		if freesp [system/words/parse re rmfree cs-open?: no]
 		
 		if try [unless do select flavors flavor [print append to-string flavor " is not supported :("]]
 		

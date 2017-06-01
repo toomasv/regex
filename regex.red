@@ -75,9 +75,12 @@ Red [
 					Also in `global` mode. Examples.
 				2017-05-31 -- corrected some mistakes. Reorganised replacement code. 
 					Added block! as replacement. In case of global parsing replaces matches in the block order,
-					eg. `a: "first" regex/parse/g/replace "\w+" x: "1 second 2" [a "\0" "third"] head x` would yield
+					eg. `a: "first" regex/parse/g/replace "\w+" x: "1 second 3" [a "\0" "third"] head x` would yield
 					`"first second third"`. Only as many matches will be changed as there are elements in the block, 
 					superfluous elements in the block will be disregarded. 
+					Some stylistic change of code in `build` function.
+				2017-06-01 -- Allowed any-string! as `/parse string` argument, 
+					so that emails, urls, tags and filenames could be parsed directly.
 			}
 	TBD: 	{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc
 				inline created words are leaking into global environment}
@@ -439,7 +442,7 @@ comment {		]
 		| 	#"+" 						keep ('some)
 		| 	#"*" 						keep ('any) 
 	]
-	build: func [inner /local s e c t r n mp][				; main workhorse
+	build: func [inner /local s e c t r n out][				; main workhorse
 		longout: 	clear []
 		shortout: 	clear []
 		parse/case inner [
@@ -455,16 +458,12 @@ comment {		]
 				) 											 
 			]
 		]
-		any [
-			all [
-				ending = 'strict 
-				append shortout [[ahead [opt #"^/" end]]]
-				append longout 	[[ahead [opt #"^/" end]]]
-			]
-			all [
-				ending = 'strictissima 
-				append shortout [[ahead end]]
-				append longout 	[[ahead end]]
+		unless ending = 'loose [
+			foreach out [shortout longout][
+				append get out switch ending [
+					strict 		[[ahead [opt #"^/" end]]] 
+					strictissima 	[[ahead end]]
+				]
 			]
 		]
 		compose/deep [[(shortout)] [(longout)]]
@@ -537,7 +536,7 @@ comment {		]
 	set 'regex func [
 		"Regex to parse converter"
 		re [string!]  
-		/parse str [string!] 							"string to parse"
+		/parse str [any-string!] 						"string to parse"
 		/debug									"turns on debugging"
 		/spec 									"prints out generated spec"
 		/modes "passes all the modes in one string"  optstr [string!] 		"shortcoded modes"
@@ -550,7 +549,7 @@ comment {		]
 		/replace 	"Captured matches are used in replacements"
 			replacement [string! block!] {String replaces any overall matches, 
 				block replaces global overall matches in order 
-				and map specifies numbered and named groups to use in ereplacement}
+				and map specifies numbered and named groups to use in replacement}
 		/try		"try specific flavor of regexp"	flavor	[word!] "flavor to try"
 		/local inner
 	][  

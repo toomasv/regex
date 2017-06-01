@@ -6,6 +6,7 @@ Red [
 		Started: 	2017-05-30 from %regex.red
 		2017-05-31	Improved pattern. Now simple matches with no modes can be done wo delimiters.
 				eg. "abcbba" ~ "^^[abc]+$"
+		2017-06-01	Some minor changes in code from regex.red
 	}
 ]
 
@@ -251,17 +252,15 @@ re-ctx: make reactor! [
 		keep (to-word append copy brsymb n)
 	]
 	replref: [#"\" [
-		[	#"'" 	copy n number #"'" 
-		|	#"<" 	copy n number #">" 
-		|	#"^{" 	copy n number #"^}" 
+		[	#"'"	copy n number #"'" 
+		| 	#"<"	copy n number #">" 
+		| 	#"^{"	copy n number #"^}" 
 		] 	keep (to-word append copy brsymb n)
-	|	[	"'" 	copy gname to #"'" 
-		|	#"<" 	copy gname to #">"
-		|	#"^{"	copy gname to #"^}"
-		]]
-		skip 
-		keep (to-word gname)
-	]
+	| 	[	#"'"	copy gname to #"'" 
+		| 	#"<"	copy gname to #">"	
+		| 	#"^{"	copy gname to #"^}"
+		] 	skip keep (to-word gname)
+	]]
 	linestart: 		is [either ml [[#"^^" keep (#"^/")]][[#"^^" (starting: 'strict)]]]
 	lineend:		is [either ml [[#"$" keep ([ahead [opt #"^/" end | #"^/"]])]][[#"$" keep ([opt #"^/" end])]]] 
 	wordboundary:	["\b" keep (												                ; does not react on changing word / nonword values
@@ -348,10 +347,10 @@ re-ctx: make reactor! [
 		| 	#"+" 							keep ('some)
 		| 	#"*" 							keep ('any) 
 	]
-	build: func [inner /local s e c t r n mp][				                    ; main workhorse
+	build: func [inner /local s e c t r n out][				                    ; main workhorse
 		longout: 	clear []
 		shortout: 	clear []
-		system/words/parse/case inner [
+		parse/case inner [
 			any [
 				collect set seq sequence  
 				opt collect set rpt repeater
@@ -364,49 +363,71 @@ re-ctx: make reactor! [
 				) 											 
 			]
 		]
+		unless ending = 'loose [
+			foreach out [shortout longout][
+				append get out switch ending [
+					strict 		[[ahead [opt #"^/" end]]] 
+					strictissima 	[[ahead end]]
+				]
+			]
+		]
 		compose/deep [[(shortout)] [(longout)]]
 	]
 
 	finish: func [inner /local short long repl][
 		set [short long] build copy inner 
-		append _spec switch starting [
-			strict [compose/deep [
-				copy (full-match) [(long)] 
-				(to-paren compose [put (symbol) 0 (full-match)])
-			]] 
-			loose [either glob [
-				either replace [
-					system/words/parse replacement [collect set repl any [replref | backref | char]]
+
+		append _spec either replace [
+			switch type?/word replacement [
+				string! [
+					parse replacement [collect set repl any [replref | backref | char]]
 					if debugging [probe compose/deep ["repl:" [(repl)]]]
 					compose/deep [
-						some [
-							to [(short)] s: copy (full-match) thru [(long)] 
-							(to-paren compose [append select (symbol) 0 (full-match)])
-							:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])
-						]
-					]
-				][
-					compose/deep [
-						some [to [(short)] copy (full-match) thru [(long)] 
-						(to-paren compose [append select (symbol) 0 (full-match)])]
-					]
-				]
-			][
-				either replace [
-					system/words/parse replacement [collect set repl any [replref | backref | char]]
-					if debugging [probe compose/deep ["repl:" [(repl)]]]
-					compose/deep [
-						to [(short)] s: copy (full-match) thru [(long)] 
-						(to-paren compose [put (symbol) 0 (full-match)]) 
+						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+						(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
 						:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])
 					]
-				][
-					compose/deep [
-						to [(short)] copy (full-match) thru [(long)] 
-						(to-paren compose [put (symbol) 0 (full-match)])
-					]
 				]
-			]]
+				block! [
+					replacement: either empty? replacement [clear []][
+						map/only replacement func [rep][
+							parse reduce rep [collect any [replref | backref | char]]
+						]
+					]
+					compose/deep [
+						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+						(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
+						:s change [(short)] 
+						(to-paren append/only copy [rejoin] 
+							compose [
+								(to-paren compose/deep [
+									either reduce pick replacement length? select (symbol) 0 [
+										reduce pick replacement length? select (symbol) 0
+									][(full-match)]
+								])
+							]
+						)
+					]					
+				]
+				map! [
+					
+				]
+				function! [
+					
+				]
+			]
+		][
+			compose/deep [
+				copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+				(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
+			]
+		]
+		all [
+			starting = 'loose 
+			insert _spec compose/deep [to [(short)]]
+			ending = 'loose
+			glob 
+			_spec: append/only copy [some] compose [(_spec)]
 		]
 		append _spec switch ending [
 			strict 			[[opt #"^/" end]] 
@@ -493,7 +514,11 @@ re-ctx: make reactor! [
 		_spec: either empty? defs [_spec][head insert/only _spec to-paren defs]
 		bind _spec: load mold _spec re-ctx							; rebinding corrects some strange behavior
 		if spec [print mold _spec]
-		return either nocase [system/words/parse str _spec][system/words/parse/case str _spec]
+		return either nocase [
+			system/words/parse str _spec
+		][
+			system/words/parse/case str _spec
+		]
 	]
 	set '~ make op! :regex
 ]

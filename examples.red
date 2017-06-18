@@ -182,6 +182,22 @@ regex/parse/replace/g "(\w\w)\w+" x: "first second third fourth" "\1" head x
 a: "first" regex/parse/g/replace "\w+" x: "1 second 2" [a "\0" "third"] head x
 ;== "first second third"
 
+; soft quantifiers
+regex/parse/g "\w*s" "boys and girls" &/0
+;== ["boys" "girls"]
+; compare possessive
+regex/parse/g "\w*+s" "boys and girls" &/0
+;== []
+; greedy
+regex/parse ".*s" "boys and girls" &/0
+;== "boys and girls"
+; lazy
+regex/parse ".*?s" "boys and girls" &/0
+;== "boys"
+
+
+
+
 ; lookahead:
 ; negative
 regex/parse "q(?!u)" "Iraqis"

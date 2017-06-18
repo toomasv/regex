@@ -102,8 +102,7 @@ Red [
 				2017-06-18 -- Corrected negative lookbehind behavior. It is still not correct if there are more than one lookaround.
 						
 			}
-	TBD: 	{atomic groups, "soft" quantifiers, character-class subtraction, switches, substitution, look-around etc
-				inline created words are leaking into global environment}
+	TBD: 	{"soft" quantifiers in/on groups/lookarounds, substitution with maps and functions, multiple look-arounds, conditionals}
 ]
 
 re-ctx: make reactor! [

@@ -86,8 +86,8 @@ Red [
 						now the captured letter is quantified, so it captures strings of same letter.
 				2017-06-03 -- Added basic support for lookaround, both negative and positive lookahead and lookbehind.
 				2017-06-08 -- Added refinement `/possessive`, short `/+`, which switches on possessive mode, so that 
-					soft quantifiers loose their meaning.
-					Made symbols thet leak into global environment cleanable. They are unset by calling `re-ctx/clean`,
+					soft quantifiers lose their meaning.
+					Made symbols that leak into global environment cleanable. They are unset by calling `re-ctx/clean`,
 						on every calling of `regex` and also on every loading of %regex.red
 				2017-06-13 -- Got soft quantifiers to work correctly while not in/on groups or charsets.
 				2017-06-17 -- Charclasses can now include `shortclasses`, e.g. `\d` or `\w`, which means that these 

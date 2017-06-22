@@ -100,6 +100,10 @@ Red [
 						"[\d-[1234]]" (exclude charset [#"0" - #"9"] charset "1234"). TBD: do this automatically
 					* soft quantifiers now work also on charclasses (but not in and on groups).
 				2017-06-18 -- Corrected negative lookbehind behavior. It is still not correct if there are more than one lookaround.
+				2017-06-22 -- Added conditionals with syntax `(?(if)then|else)`. `if` may be a number referencing captured group 
+					e.g "(pretty )?(?(1)girls|boys)", which matches "pretty girls" and "boys",	or it may be lookaround 
+					(currently only lookahead), e.g. "b(?(?=i)inary|unny)", which matches "binary" and "bunny". 
+					`then` and `else` may be any re-s (currently excluding soft quantifiers).
 						
 			}
 	TBD: 	{"soft" quantifiers in/on groups/lookarounds, substitution with maps and functions, multiple look-arounds, conditionals}
@@ -148,6 +152,9 @@ re-ctx: make reactor! [
 	lookaround:		clear []
 	lookbehind: 	clear []
 	look: 			none
+	sbrnum:			none
+	condition:		none
+	condition-open?: no
 	longsoftgrp:	clear []
 	shortsoftgrp: 	clear []
 	longsoft: 		clear []
@@ -205,28 +212,8 @@ re-ctx: make reactor! [
 		;print ["cs2:" bitset-to-string c-set "c-cl:" c-cl]
 		compose/deep either neg? [(append copy [complement] to-block mold c-set)][[(c-set)]]
 	]
-	group: 	[if (not cs-open?) [
-		#"(" 														; named group
-		[	"?P<" 	copy gname to #">" 
-		| 	"?'" 	copy gname to #"'" 
-		| 	"?<" 	copy gname to #">"
-		] skip
-		(
-			insert levelcap capturing
-			capturing: on
-			if 1 < length? levelcap [to-short: on]
-			insert symbols 'gname
-			insert levelnam copy gname
-			insert levelsym next-br
-			insert/only levelgrp copy longout 
-			insert/only levelgr2 copy shortout
-			if debugging [probe compose/deep ["sgrp lgrp:" [(levelgr2)] [(levelgrp)]]]
-			longout:	clear []
-			shortout: 	clear []
-			insert/only lookaround look
-			look: none
-		)
-	|	[ #"("  "?+" 	copy n number  #")"									; relative subroutine (forward)
+	subroutine: [if (not cs-open?) [
+		[ #"("  "?+" 	copy n number  #")"									; relative subroutine (forward)
 		| "\g"  
 			[	"<+" 	copy n number  #">"
 			| 	"'+" 	copy n number  #"'"]
@@ -249,8 +236,18 @@ re-ctx: make reactor! [
 			| 	#"'" 	copy gname to  #"'"]
 		] skip 
 		keep (to-word append copy gname getword "_" gname)
-	|	"(?"
-		(
+	]]
+	lookaround1: [
+		#"=" (look: [ahead])												; postive lookahead
+	|	#"!" (look: [ahead not])											; negative lookahead
+	|	"<=" (look: [behind []])											; positive lookbehind
+	|	"<!" (look: [behind not])											; negative lookbehind
+	]
+	conditional: [if (not cs-open?) [
+		"(?(" (insert/only lookaround look) [
+			#"?" lookaround1
+		|	copy sbrnum to #")" skip (look: none)
+		] (
 			insert levelcap capturing 
 			capturing: off
 			insert/only levelgrp copy longout 
@@ -258,16 +255,32 @@ re-ctx: make reactor! [
 			if debugging [probe compose/deep ["sgrp lgrp:" [(levelgr2)] [(levelgrp)]]]
 			longout: 	clear []
 			shortout: 	clear []
-			insert/only lookaround look
+			condition-open?: true
 		)
-		[	#":" (look: none)												; non-capturing group
-		|	#"=" (look: [ahead])											; postive lookahead
-		|	#"!" (look: [ahead not])										; negative lookahead
-		|	"<=" (look: [behind []])										; positive lookbehind
-		|	"<!" (look: [behind not])										; negative lookbehind
-		]	
-	|	#"(" ( 																; capturing group
-			insert levelcap capturing
+	]]
+	group: 	[if (not cs-open?) [
+		#"(" (																; group
+			insert levelcap capturing										; generally for groups
+			insert/only levelgrp copy longout 
+			insert/only levelgr2 copy shortout
+			if debugging [probe compose/deep ["sgrp lgrp:" [(levelgr2)] [(levelgrp)]]]
+			longout:	clear []
+			shortout: 	clear []
+			insert/only lookaround look
+			look: none
+		)[
+		#"?" [lookaround1 | #":"] (capturing: off)							; non-capturing
+		|	[	"?P<" 	copy gname to #">"  								; named group
+			| 	"?'" 	copy gname to #"'" 
+			| 	"?<" 	copy gname to #">"
+			] 	skip (	
+				capturing: on
+				if 1 < length? levelcap [to-short: on]
+				insert symbols 'gname
+				insert levelnam copy gname
+				insert levelsym next-br
+			)
+		|	(																; capturing group
 			either simp [													; unless simplex
 				capturing: off
 			][
@@ -276,17 +289,10 @@ re-ctx: make reactor! [
 				insert levelsym next-br 
 				insert levelnam none 
 			]
-			insert/only levelgrp copy longout
-			insert/only levelgr2 copy shortout			
-			if debugging [probe compose/deep ["sgrp lgrp:" [(levelgr2)] [(levelgrp)]]]
-			longout: 	clear []
-			shortout: 	clear []
-			insert/only lookaround look
-			look: none
-		)
+		)]
 	| 	#")"  opt collect set rptblk repeater rest:							; end of group, check for quantifier
 		( 
-			set [rpt mode] either empty? rptblk [[[] none]][first rptblk] 	;probe rptblk
+			set [rpt mode] either empty? rptblk [[[] none]][first rptblk] ;probe rptblk
 			either capturing [												; are we capturing?
 				all [
 					nam: take levelnam 										; if this is named group
@@ -304,11 +310,8 @@ re-ctx: make reactor! [
 					append/only append defs to-set-word sbrdef2 copy shortout 	; then 	let's add shorter version into defs, to be used in `to` part
 				]
 				if debugging [probe compose ["defs:" (defs)]]
-				;if block? first rpt [rpt: first rpt]						; if we have {...} syntax, take only numbers, not block
-				;longout: append append take levelgrp rpt compose [copy (bckref) (sbrdef1)]
-				;shortout: append append take levelgr2 rpt sbrdef2
 				shortout: append take levelgr2 compose/deep [				; we have to capture the string in the `to` part
-					ahead [copy (bckref) (sbrdef2)] (rpt) (bckref)
+					ahead [copy (bckref) (rpt) (sbrdef2)] (rpt) (bckref)
 				]
 				longout: append take levelgrp compose [(rpt) (bckref)] 		; when going `thru` we need to quantify captured string only
 				assignments: make block! 5									; let's build up the map for captured strings
@@ -346,12 +349,17 @@ re-ctx: make reactor! [
 			][																; we are not capturing
 				either look [
 					if debugging [probe compose/deep ["look:" [(look)]]]
-					set [direction lookmode] look
+					set [direction lookmode] look 
 					switch direction [
 						ahead [
-							shortout: 	append/only append take levelgr2 look copy compose [(shortout)]
-							;longout: 	append/only append take levelgrp look copy compose [(longout)]
-							longout: 	take levelgrp
+							shortout: either condition-open? [
+								condition: append/only copy look shortout 
+								look: none
+								clear [] 
+							][
+								append/only append take levelgr2 look copy compose [(shortout)]
+								longout: 	take levelgrp
+							]
 						]
 						behind [
 							insert/only lookbehind longout
@@ -360,8 +368,24 @@ re-ctx: make reactor! [
 						]
 					]
 				][
-					shortout: 	append/only append take levelgr2 rpt copy shortout		; append the (shorter?) block to the output for the `to` part
-					longout: 	append/only append take levelgrp rpt copy longout		; append the block to the output for the `thru` part (or start-bound)
+					either condition-open? [
+						shortout: append/only append take levelgr2 compose [
+							copy (getword brsymb "cond") thru
+						] append copy compose/deep [(
+							either condition [
+								compose [(condition)] 
+							][
+								compose/deep [
+									if (to-paren compose [not empty? (getword brsymb sbrnum)])
+								]
+							]
+						)] copy compose [(shortout)]
+						longout: append take levelgrp to-word rejoin [brsymb "cond"]
+						condition-open?: no
+					][
+						shortout: 	append/only append take levelgr2 rpt copy shortout		; append the (shorter?) block to the output for the `to` part
+						longout: 	append/only append take levelgrp rpt copy longout		; append the block to the output for the `thru` part (or start-bound)
+					]
 				]
 			]
 			capturing: take levelcap										; what was the capturing status for the previous level?
@@ -480,7 +504,7 @@ comment {		]
 	wordboundary: ["\b" keep (												; does not react on changing word / nonword values
 		[s: [
 			if ((1 = index? s) or find nonword first back s) 	[ahead word] 
-			| if (find word first back s) 				[ahead [nonword | end]]
+			| if (find word first back s) 						[ahead [nonword | end]]
 		]]
 	)]
 	anchor:			[linestart | lineend | wordboundary]
@@ -544,6 +568,9 @@ comment {		]
 		| 	altern
 		| 	comm
 		| 	backref
+		|	subroutine
+		|	conditional
+		| 	lookaround1
 		| 	group
 		| 	class
 		|	shortclass
@@ -604,8 +631,8 @@ comment {		]
 				|
 				(
 					if debugging [probe compose/deep ["rpt seq mode:" [(rpt)] [(seq)] [(mode)]]]
-					append longout 	compose [(rpt) (seq)]
 					append shortout compose [(rpt) (seq)]
+					append longout 	compose [(rpt) (seq)]
 					if debugging [probe compose/deep ["shortout longout:" [(shortout)] [(longout)]]]
 					if all [tail? rest not empty? softvars] [
 						while [
@@ -689,13 +716,11 @@ comment {		]
 				]
 			]
 		]
-		compose/deep [[(shortout)] [(longout)]]
-		;compose/deep [[] [(longout)]]
 	]
 
-	finish: func [inner /local short long repl][
+	finish: func [inner /local repl][
 		insert symbols [s e]
-		set [short long] build copy inner 
+		build copy inner 
 
 		append _spec either replace [
 			switch type?/word replacement [
@@ -703,7 +728,7 @@ comment {		]
 					parse replacement [collect set repl any [replref | backref | char]]
 					if debugging [probe compose/deep ["repl:" [(repl)]]]
 					compose/deep [
-						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+						s: copy (full-match) (either starting = 'loose ['thru][]) [(longout)] 
 						(
 							to-paren append copy either glob [
 								[append select]
@@ -711,7 +736,7 @@ comment {		]
 								[put]
 							] compose [(symbol) 0 (full-match)]
 						)
-						:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])
+						:s change [(shortout)] (to-paren append/only copy [rejoin] compose [(repl)])
 					]
 				]
 				block! [
@@ -721,7 +746,7 @@ comment {		]
 						]
 					]
 					compose/deep [
-						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+						s: copy (full-match) (either starting = 'loose ['thru][]) [(longout)] 
 						(
 							to-paren append copy either glob [
 								[append select]
@@ -729,7 +754,7 @@ comment {		]
 								[put]
 							] compose [(symbol) 0 (full-match)]
 						)
-						:s change [(short)] 
+						:s change [(shortout)] 
 						(to-paren append/only copy [rejoin] 
 							compose [
 								(to-paren compose/deep [
@@ -750,7 +775,7 @@ comment {		]
 			]
 		][
 			compose/deep [
-				copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+				copy (full-match) (either starting = 'loose ['thru][]) [(longout)] 
 				(
 					to-paren append copy either glob [
 						[append select]
@@ -764,13 +789,13 @@ comment {}
 		all [
 			starting = 'loose 
 			either empty? lookbehind [
-				insert _spec compose/deep [to [(short)]] 
+				insert _spec compose/deep [to [(shortout)]] 
 			][
 				insert _spec compose/deep [(
 					either 'not = lookmode [
 						lbsymb: next-lb compose/deep [
 							while [
-								s: copy (lbsymb) to [(short)] e: ;(to-paren [print [s e]])
+								s: copy (lbsymb) to [(shortout)] e: ;(to-paren [print [s e]])
 								if (
 									to-paren compose/deep [
 										parse (lbsymb) [thru [(copy take lookbehind)] end]
@@ -780,7 +805,7 @@ comment {}
 						]
 					][
 						compose/deep [
-							to [(copy first lookbehind) (short)]
+							to [(copy first lookbehind) (shortout)]
 							thru [(copy take lookbehind)]
 						]
 					]

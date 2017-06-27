@@ -7,6 +7,7 @@ Red [
 		2017-05-31	Improved pattern. Now simple matches with no modes can be done wo delimiters.
 				eg. "abcbba" ~ "^^[abc]+$"
 		2017-06-01	Some minor changes in code from regex.red
+		2017-06-27	Replacement mode now returns changed string
 	}
 ]
 
@@ -378,43 +379,11 @@ re-ctx: make reactor! [
 		set [short long] build copy inner 
 
 		append _spec either replace [
-			switch type?/word replacement [
-				string! [
-					parse replacement [collect set repl any [replref | backref | char]]
-					if debugging [probe compose/deep ["repl:" [(repl)]]]
-					compose/deep [
-						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
-						(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
-						:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])
-					]
-				]
-				block! [
-					replacement: either empty? replacement [clear []][
-						map/only replacement func [rep][
-							parse reduce rep [collect any [replref | backref | char]]
-						]
-					]
-					compose/deep [
-						s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
-						(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
-						:s change [(short)] 
-						(to-paren append/only copy [rejoin] 
-							compose [
-								(to-paren compose/deep [
-									either reduce pick replacement length? select (symbol) 0 [
-										reduce pick replacement length? select (symbol) 0
-									][(full-match)]
-								])
-							]
-						)
-					]					
-				]
-				map! [
-					
-				]
-				function! [
-					
-				]
+			parse replacement [collect set repl any [replref | backref | char]]
+			compose/deep [
+				s: copy (full-match) (either starting = 'loose ['thru][]) [(long)] 
+				(to-paren append copy either glob [[append select]][[put]] compose [(symbol) 0 (full-match)])
+				:s change [(short)] (to-paren append/only copy [rejoin] compose [(repl)])
 			]
 		][
 			compose/deep [
@@ -513,11 +482,21 @@ re-ctx: make reactor! [
 		]
 		_spec: either empty? defs [_spec][head insert/only _spec to-paren defs]
 		bind _spec: load mold _spec re-ctx							; rebinding corrects some strange behavior
-		if spec [print mold _spec]
+		;if spec [print mold _spec]
 		return either nocase [
-			system/words/parse str _spec
+			either basemode = "s" [
+				system/words/parse str _spec
+				str
+			][
+				system/words/parse str _spec
+			]
 		][
-			system/words/parse/case str _spec
+			either basemode = "s" [
+				system/words/parse/case str _spec
+				str
+			][
+				system/words/parse/case str _spec
+			]
 		]
 	]
 	set '~ make op! :regex

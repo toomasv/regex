@@ -583,7 +583,7 @@ ipaddr
 )
 
 ; as previous + named groups
->> regex/parse/g/n "(?<pre>\w(\w{1,2}))\W(?<nom>\w+)" "per aspera ad astra"
+>> "per aspera ad astra" ~ "/(?<pre>\w(\w{1,2}))\W(?<nom>\w+)/gn"
 &
 ;== #(
 ;	0 ["per aspera" "ad astra"]

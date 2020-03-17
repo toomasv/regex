@@ -266,7 +266,7 @@ re-ctx: make reactor! [
 	lineend:		is [either ml [[#"$" keep ([ahead [opt #"^/" end | #"^/"]])]][[#"$" keep ([opt #"^/" end])]]] 
 	wordboundary:	["\b" keep (												                ; does not react on changing word / nonword values
 		[s: [
-			if ((1 = index? s) or find nonword first back s) 	[ahead word] 
+			if (any [1 = index? s find nonword first back s]) [ahead word] 
 			| if (find word first back s) 				[ahead [nonword | end]]
 		]]
 	)]

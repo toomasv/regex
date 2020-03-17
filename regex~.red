@@ -563,8 +563,6 @@ ip-v4: {@
 "some text 192.168.1.65 around the address" ~ ip-v4
 ipaddr
 ;== "192.168.1.65"
-regex/parse/freespace ip-v4 "some text 192.168.1.265 around the address"
-;== false
 
 ; global mode with nested groups
 "per aspera ad astra" ~ "/(\w(\w{1,2}))\W(\w+)/g"
@@ -579,7 +577,7 @@ regex/parse/freespace ip-v4 "some text 192.168.1.265 around the address"
 ; global + simplex (non-capturing) modes 
 "per aspera ad astra" ~ "/(\w(\w{1,2}))\W(\w+)/gn"
 == true
->> br_
+>> &
 == #(
 	0 ["per aspera" "ad astra"]
 )
